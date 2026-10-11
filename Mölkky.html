@@ -280,6 +280,56 @@
             for (const f of onChoose) f(pin);
             endRound(`Mode choisi : ${pin.label}`);
         }
+
+        //ajout son et confettis
+        let audio = null;
+        function clack () {
+            audio ??= new AudioContext();
+            const t = audio.currentTime;
+            const osc = audio.createOscillator();
+            const gain = audio.createGain();
+            osc.frequency.value = 1650;
+            gain.gain.setValueAtTime(0.5, t);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+            osc.connect(gain).connect(audio.destination);
+            osc.start(t);
+            osc.stop(t + 0.13);
+        }
+
+        const bits = [];
+        function confetti(pin) {
+            const geo = new THREE.BoxGeometry(0.03, 0.015, 0.003);
+            const mats = [new THREE.MeshBasicMaterial({ color :
+                '#ffffff' })];
+                for ( let i = 0; i < 40; i++) {
+                    const m = new THREE.Mesh(geo, mats[i % 2]);
+                    m.position.set(pin.x, PIN.height, pin.z);
+                    scene.add(m);
+                    bits.push({
+                        m,
+                        v: new THREE.Vector3((Math.random() - 0.5) * 1.5,
+                    1,5 + Math.random() * 1.5, (Math.random() - 0.5) * 1.5),
+                    life: 1.2,
+                    });
+                }
+        }
+        onFrame.push((dt) => {
+            for (const b of bits) {
+                b.life -= dt;
+                b.v.y -= 4 * dt;
+                b.m.position.addScaledVector(b.v, dt);
+                b.m.rotation.x += 8 * dt;
+                b.m.rotation.z += 6 * dt;
+                if (b.life <= 0) scene.remove(b.m);
+            }
+            for (let i = bits.length - 1; i >= 0; i--) if
+            (bits[i].life <= 0) bits.splice(i,1);
+        });
+
+        onChoose.push((pin) => {
+            clack();
+            confetti(pin);
+        })
     </script>
 </body>
 </html>
