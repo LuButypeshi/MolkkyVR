@@ -1,0 +1,179 @@
+<!doctype html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mölkky mini </title>
+    <style>
+
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "cannon-es": "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="info">Bienvenue dans mini mölkky !!!</div>
+    <script type="module">
+        import * as THREE from 'three'; 
+        import * as CANNON from 'cannon-es';
+
+        const info = document.getElementById('info');
+        const onFrame = [];  //ce qui se passe à chaque image
+
+    // Création de la scène initiale 
+        const renderer = new THREE.WebGLRenderer({antialias: true});
+        renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+        renderer.setSize(innerWidth, innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87ceeb);
+
+        const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.05, 1000);
+        camera.position.set(0, 1.6, 0.6);
+        camera.lookAt(0, 0.5, -2);
+
+        scene.add(new THREE.HemisphereLight("#dfffff", "#4a6633", 1.2));
+        const sun  = new THREE.DirectionalLight("#ffffff", 1.5);
+        sun.position.set(2, 4, 2);
+        sun.castShadow = true;
+        scene.add(sun);
+
+        const grass = new THREE.Mesh(
+            new THREE.PlaneGeometry(30, 30),
+            new THREE.MeshStandardMaterial({color: "#5e9c4a"})
+        );
+        grass.rotation.x = -Math.PI / 2;
+        grass.receiveShadow = true;
+        scene.add(grass);
+
+        addEventListener("resize", () => {
+            camera.aspect = innerWidth / innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(innerWidth, innerHeight);
+        });
+
+        let last = performance.now();
+        function frame(now){
+            const dt = Math.min((now - last) / 1000, 0.1);
+            last = now;
+            for (const f of onFrame) f(dt);
+            renderer.render(scene, camera);
+            requestAnimationFrame(frame);
+        }
+        requestAnimationFrame(frame);
+
+        // Création des quilles pour le menu 
+        const PIN = { radius: 0.07, height: 0.42, mass: 0.35 };
+        const STICK =  { radius: 0.029, height: 0.225, mass: 0.38};
+        const HOLD = new THREE.Vector3(0, 1.15, 0.2);
+        const TARGET = [
+            {id: "facile", label: "Facile", color: "#4f9d63", x: -0.88, z: -1.91},
+            {id: "normal", label: "Normal", color: "#f2b63d", x: 0, z: -2.1},
+            {id: "difficile", label: "Difficile", color: "#c8553d", x: 0.88, z: -1.91}
+        ];
+
+        const world = new CANNON.World({gravity: new CANNON.Vec3(0, -9.81, 0), allowSleep: true});
+        world.solver.iterations = 20;
+        const woodPhys = new CANNON.Material("wood");
+        const grassPhys = new CANNON.Material("grass");
+        world.addContactMaterial(new 
+        CANNON.ContactMaterial(woodPhys, grassPhys, {friction: 0.6, restitution: 0.12,
+            contactEquationStiffness: 5e6, contactEquationRelaxation: 3,
+        }));
+
+        world.addContactMaterial(new
+            CANNON.ContactMaterial(woodPhys, woodPhys, {friction: 0.4, restitution: 0.25,
+                contactEquationStiffness: 5e6, contactEquationRelaxation:3,
+        }));
+        const floor = new CANNON.Body({ type: CANNON.Body.STATIC, material: grassPhys });
+        floor.addShape(new CANNON.Plane());
+        floor.quaternion.setFromEuler(-Math.PI /2, 0, 0);
+        world.addBody(floor);
+
+        onFrame.push((dt) => world.step(1 / 120, dt, 8));
+
+        const makeWood = () => new THREE.MeshStandardMaterial({color: "#e8cf9f", roughness: 0.7});
+
+        function makeSign(label, color){
+            const c = document.createElement("canvas");
+            c.width = 512;
+            c.height = 256;
+            const g = c.getContext("2d");
+            g.fillStyle = "#f4e6c8";
+            g.fillRect(0, 0, 512, 256);
+            g.fillStyle = color;
+            g.fillRect(0, 0, 512, 56);
+            g.fillStyle = "#13241c";
+            g.font = "800 96px system-ui, sans-serif";
+            g.textAlign = "center";
+            g.textBaseline = "middle";
+            g.fillText(label, 256, 150, 460);
+            const tex = new THREE.CanvasTexture(c);
+            tex.ColorSpace = THREE.SRGBColorSpace;
+            return new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.23), new THREE.MeshBasicMaterial({map: tex}));
+        }
+
+        const pins = TARGET.map((t) => {
+            const mesh = new THREE.Mesh(new
+                THREE.CylinderGeometry(PIN.radius, PIN.radius,
+                    PIN.height, 24), makeWood());
+                    mesh.castShadow = true;
+                    scene.add(mesh);
+                    const sign = makeSign(t.label, t.color);
+                    sign.position.set(t.x, PIN.height + 0.17, t.z);
+                    scene.add(sign);
+                    const body = new CANNON.Body({ mass: PIN.mass, material: woodPhys });
+                    body.addShape(new CANNON.Cylinder(PIN.radius, PIN.radius, PIN.height, 12));
+                    world.addBody(body);
+                    const pin = { ...t, mesh, body };
+                    standPin(pin);
+                    return pin;
+        });
+
+        function standPin(p){
+            p.body.position.set(p.x, PIN.height / 2 + 0.001, p.z);
+            p.body.quaternion.set(0, 0, 0, 1);
+            p.body.velocity.set(0, 0, 0);
+            p.body.angularVelocity.set(0, 0, 0);
+        }
+
+        const stick = new THREE.Mesh(new 
+        THREE.CylinderGeometry(STICK.radius, STICK.radius, STICK.height, 24), makeWood());
+        stick.castShadow = true;
+        scene.add(stick);
+        const stickBody = new CANNON.Body ({ mass: STICK.mass, material: woodPhys });
+        stickBody.addShape(new CANNON.Cylinder(STICK.radius, STICK.radius, STICK.height, 12));
+        let state = "ready"; // state "ready" = on peut visé et lancer, "flying" = le bâton est en l'air
+
+        function resetStickMesh(){
+            stick.position.copy(HOLD);
+            stick.rotation.set(Math.PI / 2, 0, 0);
+        }
+        resetStickMesh();
+
+        function launchStick(velocity){
+            stickBody.position.copy(HOLD);
+            stickBody.quaternion.setFromEuler(Math.PI / 2, 0, 0);
+            stickBody.velocity.set(velocity.x, velocity.y, velocity.z);
+            stickBody.angularVelocity.set(-7, 0, 0);
+            world.addBody(stickBody);
+            state = "flying";
+        }
+
+        function sync(mesh, body) {
+            mesh.position.copy(body.position);
+            mesh.quaternion.copy(body.quaternion);
+        }
+        onFrame.push(() => {
+            for (const p of pins) sync(p.mesh, p.body);
+            if (state === "flying") sync(stick, stickBody);
+        });
+    </script>
+</body>
+</html>
