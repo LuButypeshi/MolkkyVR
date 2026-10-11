@@ -253,6 +253,33 @@
             }
         }
         onFrame.push(watchRound);
+
+        //détection des quilles tomber
+        function tiltDeg(q) {
+            const up = 1 - 2 * (q.x * q.x + q.z * q.z);
+            return (Math.acos(Math.min(1, Math.max(-1, up))) * 180) / Math.PI;
+        }
+
+        let toppleTime = 0;
+        const onChoose = [];
+
+        function watchToppled(dt) {
+            if (state !== "flying") return;
+            if (!toppled) {
+                toppled = pins.find((p) => tiltDeg(p.body.quaternion) >= 60) ?? null;
+                return;
+            }
+            toppleTime += dt;
+            if (toppleTime > 0.8) chooseMode(toppled);
+        }
+        onFrame.push(watchToppled);
+
+        function chooseMode(pin) {
+            toppled = null;
+            toppleTime = 0;
+            for (const f of onChoose) f(pin);
+            endRound(`Mode choisi : ${pin.label}`);
+        }
     </script>
 </body>
 </html>
