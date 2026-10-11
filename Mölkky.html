@@ -4,7 +4,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Mölkky mini </title>
     <style>
-
+        html, body {margin: 0; height: 100%; overflow: hidden; 
+            background: #9fd0f0; font-family: system-ui, sans-serif; 
+        }
+        #info {position: fixed; left: 12px; top: 10px; padding: 8px 12px; border-radius: 8px;
+        background: rgba(251, 248, 239, 0.92); color: #13241c; font-size: 16px; }
     </style>
     <script type="importmap">
         {
@@ -115,7 +119,7 @@
             g.textBaseline = "middle";
             g.fillText(label, 256, 150, 460);
             const tex = new THREE.CanvasTexture(c);
-            tex.ColorSpace = THREE.SRGBColorSpace;
+            tex.colorSpace = THREE.SRGBColorSpace;
             return new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.23), new THREE.MeshBasicMaterial({map: tex}));
         }
 
@@ -174,6 +178,31 @@
             for (const p of pins) sync(p.mesh, p.body);
             if (state === "flying") sync(stick, stickBody);
         });
+
+        //Survol à la souris
+
+        const raycaster = new THREE.Raycaster();
+        const pointer = new THREE.Vector2();
+        let hovered = null;
+
+        renderer.domElement.addEventListener("pointermove", (e) => {
+        pointer.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+        raycaster.setFromCamera(pointer, camera);
+        const hit = raycaster.intersectObjects(pins.map((p) => 
+        p.mesh))[0];
+        hovered = state === "ready" && hit ? pins.find((p) =>
+        p.mesh === hit.object) : null;
+        renderer.domElement.style.cursor = hovered ? "pointer" : "default";
+        });
+
+        function updateGlow() {
+            for (const p of pins) {
+                p.mesh.material.emissive.set("#f2b63d");
+                p.mesh.material.emissiveIntensity = p === hovered ?
+                0.45 : 0;
+            }
+        }
+        onFrame.push(updateGlow);
     </script>
 </body>
 </html>
