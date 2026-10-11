@@ -229,6 +229,30 @@
         renderer.domElement.addEventListener("click", () => {
             if (state === "ready" && hovered) throwAt(hovered);
         });
+
+        //Remise en place des quilles à la fin du lancer
+        let roundTime = 0;
+
+        let toppled = null;
+
+        function endRound(message) {
+            world.removeBody(stickBody);
+            resetStickMesh();
+            pins.forEach(standPin);
+            state = "ready";
+            roundTime = 0;
+            if (message) info.textContent = message;
+        }
+
+        function watchRound(dt) {
+            if (state !== "flying" || toppled) return;
+            roundTime += dt;
+            const resting = stickBody.velocity.length() < 0.15;
+            if ((roundTime > 1.2 && resting) || roundTime > 6) {
+                endRound("Raté ! Clique pour recommencer");
+            }
+        }
+        onFrame.push(watchRound);
     </script>
 </body>
 </html>
