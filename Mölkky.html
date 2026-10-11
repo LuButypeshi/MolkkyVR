@@ -203,6 +203,32 @@
             }
         }
         onFrame.push(updateGlow);
+
+                //Vol scripté du Mölkky vers la quille
+
+        //Calcul de l'angle et de la vitesse du lancer
+        function scriptedVelocity(from, to, angleDeg, g = 9.81) {
+            const dx = to.x - from.x;
+            const dz = to.z - from.z;
+            const d = Math.hypot(dx, dz);
+            const dy = to.y - from.y;
+            const th = (angleDeg * Math.PI) /180;
+            const denom = 2 * Math.cos(th) ** 2 * (d * Math.tan(th) - dy);
+            if (denom <= 0) return null;
+            const v = Math.sqrt((g * d * d) / denom);
+            const horizontal = v * Math.cos(th);
+            return {x: (horizontal * dx) / d, y: v * Math.sin(th), z: (horizontal * dz) /d };
+        }
+
+        // Definition du point viser pour le lancer et du lancer
+        function throwAt(pin){
+            const v = scriptedVelocity(HOLD, {x: pin.x, y: PIN.height * 0.6, z: pin.z }, 22);
+            if (v) launchStick(v);
+        }
+
+        renderer.domElement.addEventListener("click", () => {
+            if (state === "ready" && hovered) throwAt(hovered);
+        });
     </script>
 </body>
 </html>
