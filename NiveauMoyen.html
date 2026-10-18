@@ -47,7 +47,7 @@
         // =====================================================
         const QUILLE = { rayon: 0.067, hauteur: 0.4, masse: 0.8 };
         const BATON = { rayon: 0.03, hauteur: 0.25, masse: 1 };
-        const DISTANCE_LANCER = 2.5;     // niveau facile : distance réduite
+        const DISTANCE_LANCER = 3.5;     // niveau moyen : distance normal
         const OBJECTIF = 50;
         const SCORE_DEPASSEMENT = 25;
         const ECHECS_MAX = 3;
@@ -306,7 +306,7 @@
             g.fillStyle = "#f4e6c8"; g.fillRect(0, 0, 640, 480);
             g.fillStyle = "#4f9d63"; g.fillRect(0, 0, 640, 70);
             g.fillStyle = "#ffffff"; g.font = "bold 40px system-ui, sans-serif";
-            g.textAlign = "center"; g.fillText("MÖLKKY – Facile", 320, 50);
+            g.textAlign = "center"; g.fillText("MÖLKKY – Moyen", 320, 50);
             g.textAlign = "left";
 
             if (partie.etat === "nom" || partie.etat === "fini") {
@@ -649,7 +649,7 @@
             }
 
             if (renderer.xr.isPresenting) lireJoysticks(dt);
-            if (partie.etat === "saisi" && manetteActive) { suivreManette(maintenant); mettreAJourAssistance(); }
+            if (partie.etat === "saisi" && manetteActive) { suivreManette(maintenant);}
             if (partie.etat === "vol") {
                 baton.position.copy(batonCorps.position);
                 baton.quaternion.copy(batonCorps.quaternion);

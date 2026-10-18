@@ -78,7 +78,7 @@
         const HOLD = new THREE.Vector3(0, 1.15, 0.2);
         const TARGET = [
             {id: "facile", label: "Facile", color: "#4f9d63", x: -0.88, z: -1.91},
-            {id: "normal", label: "Normal", color: "#f2b63d", x: 0, z: -2.1},
+            {id: "moyen", label: "Moyen", color: "#f2b63d", x: 0, z: -2.1},
             {id: "difficile", label: "Difficile", color: "#c8553d", x: 0.88, z: -1.91}
         ];
 
@@ -335,6 +335,9 @@
             }
             else if (pin.id === "moyen") {
                 setTimeout(() => { window.location.href = "NiveauMoyen.html"; }, 900);
+            }
+            else if (pin.id === "difficile") {
+                setTimeout(() => { window.location.href = "NiveauDifficile.html"; }, 900);
             }
         });
         
