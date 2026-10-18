@@ -5,12 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Mölkky – Niveau Facile</title>
     <style>
-        html, body { margin: 0; height: 100%; overflow: hidden; background: #9fd0f0; font-family: system-ui, sans-serif; }
-        #info { position: fixed; left: 12px; top: 10px; padding: 8px 12px; border-radius: 8px;
-                background: rgba(251, 248, 239, 0.92); color: #13241c; font-size: 16px; }
+        html, body { margin: 0; height: 100%; overflow: hidden; background: #5eace0; }
         #boutons { position: fixed; left: 12px; bottom: 12px; display: flex; gap: 8px; z-index: 5; }
-        #boutons button { padding: 8px 14px; border: 0; border-radius: 8px; background: #f2b63d;
+        #boutons button { padding: 8px 14px; border: 0; border-radius: 8px; background: #ffb319;
                           font-size: 16px; cursor: pointer; }
+        #saisieNom { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); display: none; gap: 8px;
+                     align-items: center; padding: 12px 16px; border-radius: 10px; z-index: 6;
+                     background: rgba(229, 204, 129, 0.95); color: #110722; font-family: system-ui, sans-serif; }
+        #saisieNom input { padding: 6px 10px; font-size: 16px; border-radius: 6px; border: 1px solid #888; }
+        #saisieNom button { padding: 7px 14px; border: 0; border-radius: 8px; background: #ffb319; font-size: 16px; cursor: pointer; }
     </style>
     <script type="importmap">
         {
@@ -23,10 +26,15 @@
     </script>
 </head>
 <body>
-    <div id="info">Niveau facile</div>
     <div id="boutons">
         <button id="btnRecommencer">Recommencer</button>
         <button id="btnMenu">Menu principal</button>
+    </div>
+
+    <div id="saisieNom">
+        <span>Ton nom :</span>
+        <input id="champNom" maxlength="12" placeholder="Joueur">
+        <button id="btnNom">Enregistrer</button>
     </div>
 
     <script type="module">
@@ -35,28 +43,24 @@
         import { VRButton } from 'three/addons/webxr/VRButton.js';
 
         // =====================================================
-        // 1. CONSTANTES
+        // 1. RÉGLAGES
         // =====================================================
         const QUILLE = { rayon: 0.067, hauteur: 0.4, masse: 0.8 };
         const BATON = { rayon: 0.03, hauteur: 0.25, masse: 1 };
-        const DISTANCE_LANCER = 2.5;          // niveau facile : distance réduite (3-4 m en normal)
+        const DISTANCE_LANCER = 2.5;     // niveau facile : distance réduite
         const OBJECTIF = 50;
         const SCORE_DEPASSEMENT = 25;
         const ECHECS_MAX = 3;
-        const DELAI_REMISE = 1;               // secondes d'attente (tout immobile) avant de compter et de relever les quilles
-        const CLE_RECORD = "molkky_record_facile";
+        const DELAI_REMISE = 1;          // secondes d'immobilité avant de compter les quilles et de les relever
+        const CLE_SCORES = "molkky_scores_facile";   // tableau des scores sauvegardé dans le navigateur
         const TABLE = { x: 0.5, hauteur: 0.9, z: -0.4 };
-        const ZONE = { xMin: -0.7, xMax: 1.1, zMin: -0.4, zMax: 0.6 };   // zone de lancer : le joueur ne peut pas en sortir
-        const REPETITION_HERBE = 15;                                      // nombre de fois que la texture d'herbe se répète sur le sol
+        const ZONE = { xMin: -0.7, xMax: 1.1, zMin: -0.4, zMax: 0.6 };   // zone de lancer (le joueur ne peut pas en sortir)
+        const LIGNES = [[1, 2], [3, 10, 4], [5, 11, 12, 6], [7, 9, 8]];   // disposition du Mölkky, de la plus proche à la plus lointaine
         const POS_BATON = new THREE.Vector3(TABLE.x, TABLE.hauteur + BATON.rayon + 0.01, TABLE.z);
         const ROT_BATON = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0));
-        // Disposition classique du Mölkky (du plus proche au plus lointain)
-        const LIGNES = [[1, 2], [3, 10, 4], [5, 11, 12, 6], [7, 9, 8]];
-
-        const info = document.getElementById('info');
 
         // =====================================================
-        // 2. SCÈNE, CAMÉRA, RENDU (avec WebXR)
+        // 2. SCÈNE
         // =====================================================
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -67,23 +71,28 @@
         document.body.appendChild(VRButton.createButton(renderer));
 
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x87ceeb);   // couleur de secours le temps que l'image charge
+        scene.background = new THREE.Color(0x87ceeb);   // secours le temps que l'image du ciel charge
 
         const chargeur = new THREE.TextureLoader();
         chargeur.load("image/sky.jpg", (tex) => {
             tex.mapping = THREE.EquirectangularReflectionMapping;
             tex.colorSpace = THREE.SRGBColorSpace;
             scene.background = tex;
-        }, undefined, () => console.warn("sky.jpg non chargée : lance la page avec un serveur local (Live Server)."));
+        });
 
+        // Le "rig" porte la caméra et les manettes : on le déplace avec le joystick
         const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.05, 1000);
         camera.position.set(0, 1.6, 0.6);
         camera.lookAt(0, 0.5, -2.5);
-
-        // "Chariot" du joueur : on déplace ce groupe avec le joystick (caméra + manettes dedans)
         const rig = new THREE.Group();
-        scene.add(rig);
         rig.add(camera);
+        scene.add(rig);
+
+        addEventListener("resize", () => {
+            camera.aspect = innerWidth / innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(innerWidth, innerHeight);
+        });
 
         scene.add(new THREE.HemisphereLight("#dfffff", "#4a6633", 1.2));
         const soleil = new THREE.DirectionalLight("#ffffff", 1.5);
@@ -93,36 +102,20 @@
         Object.assign(soleil.shadow.camera, { left: -4, right: 4, top: 4, bottom: -4 });
         scene.add(soleil, soleil.target);
 
-        const texHerbe = chargeur.load("image/herbe_sol.png", undefined, undefined, () => {
-            // image introuvable ou bloquée (page ouverte en file://) : on revient au vert uni
-            herbe.material.map = null;
-            herbe.material.color.set("#5e9c4a");
-            herbe.material.needsUpdate = true;
-            console.warn("herbe_sol.png non chargée : lance la page avec un serveur local (Live Server).");
-        });
+        // Sol en herbe
+        const texHerbe = chargeur.load("image/herbe_sol.png");
         texHerbe.colorSpace = THREE.SRGBColorSpace;
         texHerbe.wrapS = texHerbe.wrapT = THREE.RepeatWrapping;
-        texHerbe.repeat.set(REPETITION_HERBE, REPETITION_HERBE);
-        texHerbe.anisotropy = renderer.capabilities.getMaxAnisotropy();
-        const herbe = new THREE.Mesh(
-            new THREE.PlaneGeometry(30, 30),
-            new THREE.MeshStandardMaterial({ map: texHerbe })
-        );
+        texHerbe.repeat.set(15, 15);    // taille des motifs : plus le nombre est grand, plus ils sont petits
+        const herbe = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), new THREE.MeshStandardMaterial({ map: texHerbe }));
         herbe.rotation.x = -Math.PI / 2;
         herbe.receiveShadow = true;
         scene.add(herbe);
 
-        addEventListener("resize", () => {
-            camera.aspect = innerWidth / innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(innerWidth, innerHeight);
-        });
-
-        // Zone de lancer (là où se tient le joueur)
+        // Zone de lancer
         const zone = new THREE.Mesh(
             new THREE.PlaneGeometry(ZONE.xMax - ZONE.xMin, ZONE.zMax - ZONE.zMin),
-            new THREE.MeshStandardMaterial({ color: "#f4e6c8" })
-        );
+            new THREE.MeshStandardMaterial({ color: "#f4e6c8" }));
         zone.rotation.x = -Math.PI / 2;
         zone.position.set((ZONE.xMin + ZONE.xMax) / 2, 0.004, (ZONE.zMin + ZONE.zMax) / 2);
         zone.receiveShadow = true;
@@ -158,17 +151,17 @@
         solPhys.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
         monde.addBody(solPhys);
 
-        // Table physique (pour que le bâton lâché ne passe pas à travers)
         const tablePhys = new CANNON.Body({ type: CANNON.Body.STATIC, material: boisPhys });
         tablePhys.addShape(new CANNON.Box(new CANNON.Vec3(0.3, 0.025, 0.3)));
         tablePhys.position.set(TABLE.x, TABLE.hauteur - 0.025, TABLE.z);
         monde.addBody(tablePhys);
 
         // =====================================================
-        // 4. QUILLES NUMÉROTÉES (12) EN DISPOSITION MÖLKKY
+        // 4. QUILLES NUMÉROTÉES
         // =====================================================
         const boisClair = () => new THREE.MeshStandardMaterial({ color: "#e8cf9f", roughness: 0.7 });
 
+        // Le numéro est dessiné sur le dessus de la quille
         function creerTextureNumero(numero) {
             const c = document.createElement("canvas");
             c.width = c.height = 128;
@@ -185,6 +178,7 @@
             return tex;
         }
 
+        // Remet une quille debout à la position (x, z)
         function placerQuille(q, x, z) {
             q.corps.position.set(x, QUILLE.hauteur / 2 + 0.001, z);
             q.corps.quaternion.set(0, 0, 0, 1);
@@ -197,13 +191,9 @@
         LIGNES.forEach((ligne, r) => ligne.forEach((numero, i) => {
             const x = (i - (ligne.length - 1) / 2) * 0.16;
             const z = -DISTANCE_LANCER - r * 0.15;
-            const materiaux = [
-                boisClair(),
-                new THREE.MeshStandardMaterial({ map: creerTextureNumero(numero) }),
-                boisClair()
-            ];
             const mesh = new THREE.Mesh(
-                new THREE.CylinderGeometry(QUILLE.rayon, QUILLE.rayon, QUILLE.hauteur, 24), materiaux);
+                new THREE.CylinderGeometry(QUILLE.rayon, QUILLE.rayon, QUILLE.hauteur, 24),
+                [boisClair(), new THREE.MeshStandardMaterial({ map: creerTextureNumero(numero) }), boisClair()]);
             mesh.castShadow = true;
             scene.add(mesh);
             const corps = new CANNON.Body({ mass: QUILLE.masse, material: boisPhys });
@@ -215,10 +205,9 @@
         }));
 
         // =====================================================
-        // 5. LE BÂTON (le "Mölkky" que l'on lance)
+        // 5. LE BÂTON
         // =====================================================
-        const baton = new THREE.Mesh(
-            new THREE.CylinderGeometry(BATON.rayon, BATON.rayon, BATON.hauteur, 24), boisClair());
+        const baton = new THREE.Mesh(new THREE.CylinderGeometry(BATON.rayon, BATON.rayon, BATON.hauteur, 24), boisClair());
         baton.castShadow = true;
         scene.add(baton);
         const batonCorps = new CANNON.Body({ mass: BATON.masse, material: boisPhys });
@@ -233,31 +222,52 @@
         // 6. ÉTAT DE LA PARTIE
         // =====================================================
         const partie = {
-            etat: "pret",        // "pret" | "saisi" | "vol" | "fini"
+            etat: "pret",       // "pret" | "saisi" | "vol" | "nom" (saisie du nom, partie finie) | "fini"
             score: 0, lancer: 1, dernierPoints: 0, echecs: 0,
-            temps: 0, chrono: false,
+            temps: 0, chrono: false, victoire: false, idEntree: 0,
             message: "", couleur: "#13241c",
-            historique: []       // un objet par lancer : quilles tombées, points, score total, n° du lancer
+            historique: []      // un objet par lancer : numéro, quilles tombées, points, score total
         };
-        let tempsLancer = 0;
-        let attenteFin = 0;
+        let tempsLancer = 0;    // durée du lancer en cours
+        let attenteFin = 0;     // durée d'immobilité
 
         function formaterTemps(s) {
-            const m = Math.floor(s / 60), sec = Math.floor(s % 60);
-            return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+            return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(Math.floor(s % 60)).padStart(2, "0");
         }
 
-        // ---- Sauvegarde locale du meilleur résultat ----
-        function chargerRecord() {
-            try { return JSON.parse(localStorage.getItem(CLE_RECORD)); } catch { return null; }
+        // ---- Tableau des scores (localStorage) ----
+        function chargerScores() {
+            try { return JSON.parse(localStorage.getItem(CLE_SCORES)) || []; } catch { return []; }
         }
-        function sauvegarderRecord(lancers, temps) {
-            const ancien = chargerRecord();
-            const meilleur = !ancien || lancers < ancien.lancers || (lancers === ancien.lancers && temps < ancien.temps);
-            if (meilleur) {
-                try { localStorage.setItem(CLE_RECORD, JSON.stringify({ lancers, temps })); } catch {}
-            }
+        let scores = chargerScores();
+
+        function sauvegarderScores() {
+            // les victoires d'abord (moins de lancers, puis moins de temps), puis les défaites (meilleur score d'abord)
+            scores.sort((a, b) => (b.victoire - a.victoire) ||
+                (a.victoire ? (a.lancers - b.lancers || a.temps - b.temps) : (b.score - a.score)));
+            scores.splice(10);   // on garde les 10 meilleurs
+            try { localStorage.setItem(CLE_SCORES, JSON.stringify(scores)); } catch {}
+            dessinerScores();
         }
+
+        // ---- Saisie du nom : boîte HTML sur PC, 3 lettres au joystick en VR ----
+        const LETTRES = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        const nomVR = [0, 0, 0];   // les 3 lettres choisies (indices dans LETTRES)
+        let curseur = 0;           // lettre en cours de modification
+        const boiteNom = document.getElementById("saisieNom");
+        const champNom = document.getElementById("champNom");
+
+        function validerNom(nom) {
+            if (partie.etat !== "nom") return;
+            const entree = scores.find((e) => e.id === partie.idEntree);
+            if (entree) entree.nom = nom.trim() || "Joueur";
+            sauvegarderScores();
+            boiteNom.style.display = "none";
+            partie.etat = "fini";
+            dessinerTableau();
+        }
+        document.getElementById("btnNom").onclick = () => validerNom(champNom.value);
+        champNom.addEventListener("keydown", (e) => { if (e.key === "Enter") validerNom(champNom.value); });
 
         function nouvellePartie() {
             if (monde.bodies.includes(batonCorps)) monde.removeBody(batonCorps);
@@ -265,136 +275,148 @@
             remettreBatonSurTable();
             Object.assign(partie, {
                 etat: "pret", score: 0, lancer: 1, dernierPoints: 0, echecs: 0,
-                temps: 0, chrono: false, historique: [],
-                message: "Saisis le bâton avec le grip, lance en le relâchant !", couleur: "#13241c"
+                temps: 0, chrono: false, victoire: false, historique: [],
+                message: "Saisis le bâton avec le grip !", couleur: "#13241c"
             });
             tempsLancer = 0;
+            curseur = 0;
+            boiteNom.style.display = "none";
             dessinerTableau();
         }
 
         // =====================================================
-        // 7. TABLEAU D'AFFICHAGE 3D (score, lancer, échecs, temps...)
+        // 7. TABLEAUX D'AFFICHAGE 3D (partie en cours / fin de partie, et tableau des scores)
         // =====================================================
-        const cvsHUD = document.createElement("canvas");
-        cvsHUD.width = 640; cvsHUD.height = 480;
-        const gHUD = cvsHUD.getContext("2d");
-        const texHUD = new THREE.CanvasTexture(cvsHUD);
-        texHUD.colorSpace = THREE.SRGBColorSpace;
-        const panneau = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.9), new THREE.MeshBasicMaterial({ map: texHUD }));
-        panneau.position.set(-1.3, 1.6, -1.8);
-        panneau.lookAt(0, 1.6, 0);
-        scene.add(panneau);
+        function creerTableau(x) {
+            const c = document.createElement("canvas");
+            c.width = 640; c.height = 480;
+            const texture = new THREE.CanvasTexture(c);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.9), new THREE.MeshBasicMaterial({ map: texture }));
+            mesh.position.set(x, 1.6, -1.8);
+            mesh.lookAt(0, 1.6, 0);
+            scene.add(mesh);
+            return { g: c.getContext("2d"), texture };
+        }
+        const tableauJeu = creerTableau(-1.3);      // à gauche : score, lancer, échecs, temps...
+        const tableauScores = creerTableau(1.4);    // à droite : tableau des scores
 
         function dessinerTableau() {
-            const g = gHUD;
+            const g = tableauJeu.g;
             g.fillStyle = "#f4e6c8"; g.fillRect(0, 0, 640, 480);
             g.fillStyle = "#4f9d63"; g.fillRect(0, 0, 640, 70);
             g.fillStyle = "#ffffff"; g.font = "bold 40px system-ui, sans-serif";
             g.textAlign = "center"; g.fillText("MÖLKKY – Facile", 320, 50);
+            g.textAlign = "left";
 
-            const record = chargerRecord();
-            const lignes = [
-                `Score : ${partie.score} / ${OBJECTIF}`,
-                `Lancer n° ${partie.lancer}`,
-                `Dernier lancer : +${partie.dernierPoints}`,
-                `Échecs consécutifs : ${partie.echecs} / ${ECHECS_MAX}`,
-                `Temps : ${formaterTemps(partie.temps)}`,
-                `Record : ${record ? record.lancers + " lancers, " + formaterTemps(record.temps) : "—"}`
-            ];
-            g.textAlign = "left"; g.fillStyle = "#13241c"; g.font = "34px system-ui, sans-serif";
-            lignes.forEach((l, i) => g.fillText(l, 30, 125 + i * 50));
+            if (partie.etat === "nom" || partie.etat === "fini") {
+                // ---- écran de fin de partie ----
+                g.fillStyle = partie.couleur; g.font = "bold 56px system-ui, sans-serif";
+                g.fillText(partie.victoire ? "VICTOIRE !" : "DÉFAITE !", 30, 140);
+                g.fillStyle = "#13241c"; g.font = "34px system-ui, sans-serif";
+                g.fillText(`Score final : ${partie.score} / ${OBJECTIF}`, 30, 200);
+                g.fillText(`Nombre de lancers : ${partie.historique.length}`, 30, 250);
+                g.fillText(`Temps total : ${formaterTemps(partie.temps)}`, 30, 300);
+                if (partie.etat === "nom") {
+                    g.fillText("Ton nom :", 30, 372);
+                    for (let i = 0; i < 3; i++) {
+                        g.fillStyle = i === curseur ? "#ffb319" : "#d9c9a3";
+                        g.fillRect(230 + i * 70, 335, 60, 52);
+                        g.fillStyle = "#13241c";
+                        g.fillText(LETTRES[nomVR[i]], 245 + i * 70, 374);
+                    }
+                    g.font = "20px system-ui, sans-serif";
+                    g.fillText("Joystick : ↑↓ lettre, ←→ case. Gâchette : valider", 30, 430);
+                    g.fillText("Sur PC : tape ton nom dans la boîte en haut de l'écran", 30, 458);
+                } else {
+                    g.font = "26px system-ui, sans-serif";
+                    g.fillText("Gâchette ou A / X : rejouer", 30, 400);
+                }
+            } else {
+                // ---- partie en cours ----
+                const record = scores.find((e) => e.victoire);
+                g.fillStyle = "#13241c"; g.font = "34px system-ui, sans-serif";
+                [
+                    `Score : ${partie.score} / ${OBJECTIF}`,
+                    `Lancer n° ${partie.lancer}`,
+                    `Dernier lancer : +${partie.dernierPoints}`,
+                    `Échecs consécutifs : ${partie.echecs} / ${ECHECS_MAX}`,
+                    `Temps : ${formaterTemps(partie.temps)}`,
+                    `Record : ${record ? record.lancers + " lancers, " + formaterTemps(record.temps) : "—"}`
+                ].forEach((ligne, i) => g.fillText(ligne, 30, 125 + i * 50));
+                g.fillStyle = partie.couleur; g.font = "bold 30px system-ui, sans-serif";
+                g.fillText(partie.message, 30, 430, 580);
+                g.fillStyle = "#13241c"; g.font = "20px system-ui, sans-serif";
+                g.fillText("Bouton A / X : recommencer", 30, 465);
+            }
+            tableauJeu.texture.needsUpdate = true;
+        }
 
-            g.fillStyle = partie.couleur; g.font = "bold 30px system-ui, sans-serif";
-            g.fillText(partie.message, 30, 440, 580);
-            texHUD.needsUpdate = true;
-
-            info.textContent = `Score ${partie.score}/${OBJECTIF} | Lancer ${partie.lancer} | ` +
-                `Dernier +${partie.dernierPoints} | Échecs ${partie.echecs}/${ECHECS_MAX} | ${formaterTemps(partie.temps)} — ${partie.message}`;
+        function dessinerScores() {
+            const g = tableauScores.g;
+            g.fillStyle = "#f4e6c8"; g.fillRect(0, 0, 640, 480);
+            g.fillStyle = "#ffb319"; g.fillRect(0, 0, 640, 70);
+            g.fillStyle = "#13241c"; g.font = "bold 36px system-ui, sans-serif";
+            g.textAlign = "center"; g.fillText("TABLEAU DES SCORES", 320, 48);
+            g.textAlign = "left"; g.font = "28px system-ui, sans-serif";
+            if (scores.length === 0) g.fillText("Aucune partie jouée", 30, 130);
+            scores.slice(0, 7).forEach((e, i) => {
+                g.fillStyle = e.victoire ? "#2f7d46" : "#c8553d";
+                const detail = e.victoire ? `${e.lancers} lancers, ${formaterTemps(e.temps)}` : `défaite (${e.score} pts)`;
+                g.fillText(`${i + 1}. ${e.nom} – ${detail}`, 30, 120 + i * 50, 580);
+            });
+            tableauScores.texture.needsUpdate = true;
         }
 
         // =====================================================
-        // 8. MANETTES VR : déplacement (joystick), saisie (grip), lancer
+        // 8. MANETTES VR : joysticks, saisie (grip), lancer
         // =====================================================
-        const DISTANCE_SAISIE = 0.3;        // distance max main -> bâton pour le saisir
-        const VITESSE_DEPLACEMENT = 2;      // m/s
-        const VITESSE_ROTATION = 1.5;       // rad/s
+        const VITESSE_DEPLACEMENT = 2;   // m/s
+        const VITESSE_ROTATION = 1.5;    // rad/s
         let manetteActive = null;
-        let trace = [];                     // dernières positions (monde) de la manette, pour la vitesse du lancer
-        const posTmp = new THREE.Vector3();
-        const quatTmp = new THREE.Quaternion();
+        let trace = [];                  // dernières positions de la manette : sert à calculer la vitesse du lancer
+        const pos = new THREE.Vector3();
+        const quat = new THREE.Quaternion();
 
-        const manettes = [0, 1].map((i) => {
+        [0, 1].forEach((i) => {
             const m = renderer.xr.getController(i);
             m.add(new THREE.Mesh(
                 new THREE.ConeGeometry(0.02, 0.08, 12).rotateX(-Math.PI / 2),
                 new THREE.MeshStandardMaterial({ color: "#333333" })));
-            m.addEventListener("squeezestart", () => saisirBaton(m));                          // grip appuyé : on saisit
-            m.addEventListener("squeezeend", () => { if (manetteActive === m) lacherBaton(); }); // grip relâché : on lance
-            m.addEventListener("selectstart", () => { if (partie.etat === "fini") nouvellePartie(); }); // gâchette en fin de partie
-            rig.add(m);   // les manettes suivent le chariot du joueur
-            return m;
+            m.addEventListener("squeezestart", () => saisirBaton(m));                            // grip appuyé : on saisit
+            m.addEventListener("squeezeend", () => { if (manetteActive === m) lacherBaton(); });   // grip relâché : on lance
+            m.addEventListener("selectstart", () => {                                              // gâchette
+                if (partie.etat === "nom") validerNom(nomVR.map((i) => LETTRES[i]).join(""));      //   valider le nom
+                else if (partie.etat === "fini") nouvellePartie();                                  //   rejouer
+            });
+            rig.add(m);
         });
 
         function saisirBaton(m) {
             if (partie.etat !== "pret") return;
-            m.getWorldPosition(posTmp);
-            if (posTmp.distanceTo(baton.position) > DISTANCE_SAISIE) return;   // trop loin du bâton
+            m.getWorldPosition(pos);
+            if (pos.distanceTo(baton.position) > 0.3) return;   // main trop loin du bâton
             manetteActive = m;
             trace = [];
             partie.etat = "saisi";
         }
 
         function suivreManette(maintenant) {
-            manetteActive.getWorldPosition(posTmp);
-            manetteActive.getWorldQuaternion(quatTmp);
-            baton.position.copy(posTmp);
-            baton.quaternion.copy(quatTmp).multiply(ROT_BATON);
-            trace.push({ p: posTmp.clone(), t: maintenant });
-            while (trace.length && maintenant - trace[0].t > 120) trace.shift();
+            manetteActive.getWorldPosition(pos);
+            manetteActive.getWorldQuaternion(quat);
+            baton.position.copy(pos);
+            baton.quaternion.copy(quat).multiply(ROT_BATON);
+            trace.push({ p: pos.clone(), t: maintenant });
+            while (trace.length && maintenant - trace[0].t > 120) trace.shift();   // on garde ~120 ms
         }
 
-        // Vitesse de la manette (m/s) calculée sur les ~120 dernières ms
+        // Vitesse de la manette en m/s
         function vitesseManette() {
             if (trace.length < 2) return new THREE.Vector3();
             const a = trace[0], b = trace[trace.length - 1];
-            const d = (b.t - a.t) / 1000;
-            if (d < 0.02) return new THREE.Vector3();
-            return b.p.clone().sub(a.p).divideScalar(d);
-        }
-
-        // Joystick gauche : se déplacer dans la zone de lancer. Joystick droit : tourner. Bouton A / X : recommencer.
-        const boutonAvant = {};
-        const zoneMorte = (v) => (Math.abs(v) < 0.15 ? 0 : v);
-        const dirTete = new THREE.Vector3();
-        const droiteTete = new THREE.Vector3();
-        const HAUT = new THREE.Vector3(0, 1, 0);
-
-        function lireJoysticks(dt) {
-            const session = renderer.xr.getSession();
-            if (!session) return;
-            let avance = 0, lateral = 0, rotation = 0;
-            for (const source of session.inputSources) {
-                const pad = source.gamepad;
-                if (!pad) continue;
-                const x = zoneMorte(pad.axes[2] ?? pad.axes[0] ?? 0);
-                const y = zoneMorte(pad.axes[3] ?? pad.axes[1] ?? 0);
-                if (source.handedness === "left") { lateral = x; avance = -y; }
-                if (source.handedness === "right") rotation = x;
-                const appuye = !!pad.buttons[4]?.pressed;
-                if (appuye && !boutonAvant[source.handedness]) nouvellePartie();
-                boutonAvant[source.handedness] = appuye;
-            }
-            renderer.xr.getCamera().getWorldDirection(dirTete);
-            dirTete.y = 0;
-            if (dirTete.lengthSq() > 1e-4) {
-                dirTete.normalize();
-                droiteTete.crossVectors(dirTete, HAUT);
-                rig.position.addScaledVector(dirTete, avance * VITESSE_DEPLACEMENT * dt);
-                rig.position.addScaledVector(droiteTete, lateral * VITESSE_DEPLACEMENT * dt);
-                rig.position.x = Math.min(ZONE.xMax, Math.max(ZONE.xMin, rig.position.x));
-                rig.position.z = Math.min(ZONE.zMax, Math.max(ZONE.zMin, rig.position.z));
-            }
-            rig.rotation.y -= rotation * VITESSE_ROTATION * dt;
+            const duree = (b.t - a.t) / 1000;
+            if (duree < 0.02) return new THREE.Vector3();
+            return b.p.clone().sub(a.p).divideScalar(duree);
         }
 
         function lacherBaton() {
@@ -402,19 +424,19 @@
             manetteActive = null;
             ligneAide.visible = false;
             cible.visible = false;
-            if (v.length() < 1) {            // simple dépôt : on le remet sur la table, pas de lancer
+            if (v.length() < 1) {           // simple dépôt, pas un lancer : le bâton retourne sur la table
                 partie.etat = "pret";
                 remettreBatonSurTable();
-                return;
+            } else {
+                envoyerBaton(v);
             }
-            envoyerBaton(v);
         }
 
         function envoyerBaton(v) {
             batonCorps.position.copy(baton.position);
             batonCorps.quaternion.copy(baton.quaternion);
             batonCorps.velocity.set(v.x, v.y, v.z);
-            // rotation du bâton en vol, autour de l'axe perpendiculaire à la direction du lancer
+            // le bâton tourne sur lui-même autour de l'axe perpendiculaire à la direction du lancer
             const dir = new THREE.Vector3(v.x, 0, v.z).normalize();
             const rot = new THREE.Vector3(0, 1, 0).cross(dir).multiplyScalar(6);
             batonCorps.angularVelocity.set(rot.x, rot.y, rot.z);
@@ -424,6 +446,52 @@
             partie.chrono = true;
             tempsLancer = 0;
             attenteFin = 0;
+        }
+
+        // Joystick gauche : se déplacer. Joystick droit : tourner. Bouton A / X : recommencer.
+        // En fin de partie (saisie du nom), le joystick sert à choisir les 3 lettres.
+        const boutonAvant = {};
+        const zoneMorte = (v) => (Math.abs(v) < 0.15 ? 0 : v);
+        const dirTete = new THREE.Vector3();
+        let stickNeutre = true;
+
+        function choisirLettre(x, y) {
+            if (Math.max(Math.abs(x), Math.abs(y)) < 0.7) { stickNeutre = true; return; }
+            if (!stickNeutre) return;                 // un seul changement par poussée
+            stickNeutre = false;
+            if (Math.abs(y) > Math.abs(x)) nomVR[curseur] = (nomVR[curseur] + (y < 0 ? 1 : 25)) % 26;   // haut : lettre suivante
+            else curseur = Math.min(2, Math.max(0, curseur + (x > 0 ? 1 : -1)));                         // gauche / droite : changer de case
+            dessinerTableau();
+        }
+
+        function lireJoysticks(dt) {
+            const session = renderer.xr.getSession();
+            if (!session) return;
+            let avance = 0, lateral = 0, rotation = 0, nx = 0, ny = 0;
+            for (const source of session.inputSources) {
+                const pad = source.gamepad;
+                if (!pad) continue;
+                const x = zoneMorte(pad.axes[2] ?? pad.axes[0] ?? 0);
+                const y = zoneMorte(pad.axes[3] ?? pad.axes[1] ?? 0);
+                if (source.handedness === "left") { lateral = x; avance = -y; }
+                if (source.handedness === "right") rotation = x;
+                if (Math.abs(x) + Math.abs(y) > Math.abs(nx) + Math.abs(ny)) { nx = x; ny = y; }
+                const appuye = !!pad.buttons[4]?.pressed;
+                if (appuye && !boutonAvant[source.handedness]) nouvellePartie();
+                boutonAvant[source.handedness] = appuye;
+            }
+            if (partie.etat === "nom") { choisirLettre(nx, ny); return; }
+            // direction du regard (à plat) : "avant" = là où on regarde
+            renderer.xr.getCamera().getWorldDirection(dirTete);
+            dirTete.y = 0;
+            if (dirTete.lengthSq() > 1e-4) {
+                dirTete.normalize();
+                rig.position.x += (dirTete.x * avance - dirTete.z * lateral) * VITESSE_DEPLACEMENT * dt;
+                rig.position.z += (dirTete.z * avance + dirTete.x * lateral) * VITESSE_DEPLACEMENT * dt;
+                rig.position.x = Math.min(ZONE.xMax, Math.max(ZONE.xMin, rig.position.x));
+                rig.position.z = Math.min(ZONE.zMax, Math.max(ZONE.zMin, rig.position.z));
+            }
+            rig.rotation.y -= rotation * VITESSE_ROTATION * dt;
         }
 
         // =====================================================
@@ -446,24 +514,25 @@
         function mettreAJourAssistance() {
             const v = vitesseManette();
             if (v.length() < 1) { ligneAide.visible = false; cible.visible = false; return; }
-            const p0 = baton.position;
-            const pos = ligneAide.geometry.attributes.position;
+            const p = baton.position;
+            const points = ligneAide.geometry.attributes.position;
             let atterri = false, fx = 0, fz = 0;
             for (let i = 0; i < NB_POINTS; i++) {
                 const t = i * 0.05;
-                let x = p0.x + v.x * t, y = p0.y + v.y * t - 0.5 * 9.81 * t * t, z = p0.z + v.z * t;
+                let x = p.x + v.x * t, y = p.y + v.y * t - 4.905 * t * t, z = p.z + v.z * t;
                 if (atterri) { x = fx; z = fz; y = 0.01; }
                 else if (y < 0.01) { atterri = true; y = 0.01; fx = x; fz = z; cible.position.set(x, 0.015, z); }
-                pos.setXYZ(i, x, y, z);
+                points.setXYZ(i, x, y, z);
             }
-            pos.needsUpdate = true;
+            points.needsUpdate = true;
             ligneAide.visible = true;
             cible.visible = atterri;
         }
 
         // =====================================================
-        // 10. DÉTECTION DES QUILLES TOMBÉES + SCORE
+        // 10. QUILLES TOMBÉES ET SCORE
         // =====================================================
+        // Angle (en degrés) entre l'axe de la quille et la verticale
         function inclinaisonDeg(q) {
             const haut = 1 - 2 * (q.x * q.x + q.z * q.z);
             return (Math.acos(Math.min(1, Math.max(-1, haut))) * 180) / Math.PI;
@@ -471,17 +540,16 @@
 
         function calculerPoints(tombees) {
             if (tombees.length === 0) return 0;
-            if (tombees.length === 1) return tombees[0].numero;   // 1 quille : son numéro
+            if (tombees.length === 1) return tombees[0].numero;   // une quille : son numéro
             return tombees.length;                                // plusieurs : leur nombre
         }
 
+        // Le lancer est fini quand tout est immobile depuis DELAI_REMISE secondes (ou au bout de 12 s)
         function surveillerLancer(dt) {
             tempsLancer += dt;
-            const batonImmobile = batonCorps.velocity.length() < 0.15;
-            const quillesImmobiles = quilles.every((q) =>
+            const immobile = batonCorps.velocity.length() < 0.15 && quilles.every((q) =>
                 q.corps.velocity.length() < 0.1 && q.corps.angularVelocity.length() < 0.3);
-            // on attend que tout soit immobile pendant DELAI_REMISE secondes (les quilles ont le temps de finir de tomber)
-            if (tempsLancer > 1.5 && batonImmobile && quillesImmobiles) attenteFin += dt;
+            if (tempsLancer > 1.5 && immobile) attenteFin += dt;
             else attenteFin = 0;
             if (attenteFin >= DELAI_REMISE || tempsLancer > 12) terminerLancer();
         }
@@ -490,27 +558,24 @@
             const tombees = quilles.filter((q) => inclinaisonDeg(q.corps.quaternion) >= 60);
             const points = calculerPoints(tombees);
             let total = partie.score + points;
-            let message, couleur;
 
             if (points === 0) {
                 partie.echecs++;
-                message = `Raté ! Aucun point (échec ${partie.echecs}/${ECHECS_MAX})`;
-                couleur = "#c8553d";
+                partie.message = `Raté ! Aucun point (échec ${partie.echecs}/${ECHECS_MAX})`;
+                partie.couleur = "#c8553d";
             } else {
                 partie.echecs = 0;
-                message = `+${points} point${points > 1 ? "s" : ""} !`;
-                couleur = "#2f7d46";
+                partie.message = `+${points} point${points > 1 ? "s" : ""} !`;
+                partie.couleur = "#2f7d46";
             }
             if (total > OBJECTIF) {
                 total = SCORE_DEPASSEMENT;
-                message = `Dépassement de ${OBJECTIF} ! Retour à ${SCORE_DEPASSEMENT} points`;
-                couleur = "#d98a00";
+                partie.message = `Dépassement de ${OBJECTIF} ! Retour à ${SCORE_DEPASSEMENT} points`;
+                partie.couleur = "#d98a00";
             }
 
             partie.dernierPoints = points;
             partie.score = total;
-            partie.message = message;
-            partie.couleur = couleur;
             partie.historique.push({
                 lancer: partie.lancer,
                 quillesTombees: tombees.map((q) => q.numero),
@@ -518,7 +583,7 @@
                 scoreTotal: total
             });
 
-            // Chaque quille tombée est remise debout là où elle est tombée
+            // chaque quille tombée est remise debout là où elle est tombée
             tombees.forEach((q) => placerQuille(q, q.corps.position.x, q.corps.position.z));
             monde.removeBody(batonCorps);
             remettreBatonSurTable();
@@ -530,64 +595,61 @@
         }
 
         function finDePartie(victoire) {
-            partie.etat = "fini";
+            partie.etat = "nom";
             partie.chrono = false;
-            const lancers = partie.historique.length;
-            const bilan = `Score ${partie.score} – ${lancers} lancers – ${formaterTemps(partie.temps)}`;
-            if (victoire) {
-                partie.message = `VICTOIRE ! ${bilan}`;
-                partie.couleur = "#2f7d46";
-                sauvegarderRecord(lancers, partie.temps);
-            } else {
-                partie.message = `DÉFAITE (3 échecs). ${bilan}`;
-                partie.couleur = "#c8553d";
-            }
+            partie.victoire = victoire;
+            partie.couleur = victoire ? "#2f7d46" : "#c8553d";
+            // Le résultat est enregistré tout de suite sous le nom "Joueur" ; la saisie du nom le renomme ensuite
+            partie.idEntree = Date.now();
+            scores.push({
+                id: partie.idEntree, nom: "Joueur", victoire,
+                score: partie.score, lancers: partie.historique.length, temps: partie.temps,
+                historique: partie.historique
+            });
+            sauvegarderScores();
             console.table(partie.historique);
+            champNom.value = "";
+            boiteNom.style.display = "flex";
+            if (!renderer.xr.isPresenting) champNom.focus();
         }
 
         // =====================================================
-        // 11. LANCER À LA SOURIS (test sur ordinateur, sans casque)
+        // 11. TEST SANS CASQUE : un clic lance le bâton vers les quilles
         // =====================================================
-        function vitesseScriptee(depart, arrivee, angleDeg, g = 9.81) {
-            const dx = arrivee.x - depart.x, dz = arrivee.z - depart.z;
-            const d = Math.hypot(dx, dz), dy = arrivee.y - depart.y;
-            const th = (angleDeg * Math.PI) / 180;
-            const denom = 2 * Math.cos(th) ** 2 * (d * Math.tan(th) - dy);
-            if (denom <= 0) return null;
-            const v = Math.sqrt((g * d * d) / denom);
-            const h = v * Math.cos(th);
-            return new THREE.Vector3((h * dx) / d, v * Math.sin(th), (h * dz) / d);
-        }
-
         renderer.domElement.addEventListener("click", () => {
+            if (partie.etat === "fini") { nouvellePartie(); return; }   // partie terminée : un clic = rejouer
             if (renderer.xr.isPresenting || partie.etat !== "pret") return;
-            const cibleLancer = { x: (Math.random() - 0.5) * 0.6, y: 0.25, z: -DISTANCE_LANCER - 0.2 };
-            const v = vitesseScriptee(baton.position, cibleLancer, 22);
-            if (v) envoyerBaton(v);
+            baton.position.y = 1.25;                             // on "soulève" le bâton au-dessus de la table avant de le lancer
+            const duree = 0.5;                                   // durée de vol voulue (s)
+            const cx = (Math.random() - 0.5) * 0.6;              // un peu de hasard à gauche / à droite
+            const cz = -DISTANCE_LANCER - 0.2;
+            envoyerBaton(new THREE.Vector3(
+                (cx - baton.position.x) / duree,
+                (0.25 - baton.position.y + 4.905 * duree * duree) / duree,
+                (cz - baton.position.z) / duree));
         });
 
         // =====================================================
-        // 12. BOUTONS + BOUCLE PRINCIPALE
+        // 12. BOUTONS ET BOUCLE PRINCIPALE
         // =====================================================
         document.getElementById("btnRecommencer").onclick = nouvellePartie;
         document.getElementById("btnMenu").onclick = () => { location.href = "M%C3%B6lkky.html"; };
 
         let dernier = performance.now();
-        let compteurHUD = 0;
+        let compteurTableau = 0;
 
-        function boucle(maintenant) {
+        renderer.setAnimationLoop((maintenant) => {
             const dt = Math.min((maintenant - dernier) / 1000, 0.1);
             dernier = maintenant;
 
             monde.step(1 / 120, dt, 8);
-
             for (const q of quilles) {
                 q.mesh.position.copy(q.corps.position);
                 q.mesh.quaternion.copy(q.corps.quaternion);
             }
 
             if (renderer.xr.isPresenting) lireJoysticks(dt);
-            if (partie.etat === "saisi") { suivreManette(maintenant); mettreAJourAssistance(); }
+            if (partie.etat === "saisi" && manetteActive) { suivreManette(maintenant); mettreAJourAssistance(); }
             if (partie.etat === "vol") {
                 baton.position.copy(batonCorps.position);
                 baton.quaternion.copy(batonCorps.quaternion);
@@ -595,14 +657,14 @@
             }
 
             if (partie.chrono) partie.temps += dt;
-            compteurHUD += dt;
-            if (compteurHUD > 0.25) { compteurHUD = 0; dessinerTableau(); }
+            compteurTableau += dt;
+            if (compteurTableau > 0.25) { compteurTableau = 0; dessinerTableau(); }   // le chrono se met à jour 4 fois par seconde
 
             renderer.render(scene, camera);
-        }
+        });
 
+        dessinerScores();
         nouvellePartie();
-        renderer.setAnimationLoop(boucle);
     </script>
 </body>
 </html>

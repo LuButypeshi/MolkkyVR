@@ -326,17 +326,18 @@
             (bits[i].life <= 0) bits.splice(i,1);
         });
 
-        onChoose.push((pin) => {
-            clack();
-            confetti(pin);
-        })
+        
         onChoose.push((pin) => {
             clack();
             confetti(pin);
             if (pin.id === "facile") {
                 setTimeout(() => { window.location.href = "NiveauFacile.html"; }, 900);
             }
+            else if (pin.id === "moyen") {
+                setTimeout(() => { window.location.href = "NiveauMoyen.html"; }, 900);
+            }
         });
+        
     </script>
 </body>
 </html>
