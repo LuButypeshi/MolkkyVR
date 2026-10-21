@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mölkky – Accueil</title>
+    <style>
+        html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; color: #13241c; }
+        body {
+            background: #87ceeb url("image/sky.jpg") center / cover no-repeat;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            padding: 16px; box-sizing: border-box; overflow: hidden; text-align: center;
+        }
+        .herbe {
+            position: fixed; left: 0; right: 0; bottom: 0; height: 24%; z-index: 0;
+            background: linear-gradient(#6fb35a, #4a8a3c);
+        }
+        .contenu { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 28px; }
+        .titre { background: rgba(244, 230, 200, 0.94); padding: 18px 40px; border-radius: 16px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2); }
+        .titre h1 { margin: 0; font-size: clamp(40px, 10vw, 76px); letter-spacing: 3px; }
+        .titre p { margin: 6px 0 0; font-size: 18px; }
+        .bouton {
+            padding: 16px 56px; border-radius: 12px; background: #ffb319; color: #13241c;
+            font-size: 26px; font-weight: 700; text-decoration: none; box-shadow: 0 6px 0 #c98a00;
+        }
+        .bouton:active { transform: translateY(4px); box-shadow: 0 2px 0 #c98a00; }
+        .aide { margin: 0; padding: 8px 14px; border-radius: 8px; background: rgba(251, 248, 239, 0.92); font-size: 15px; }
+    </style>
+</head>
+<body>
+    <div class="herbe"></div>
+    <main class="contenu">
+        <div class="titre">
+            <h1>MÖLKKY</h1>
+            <p>Mini mölkky en 3D</p>
+        </div>
+        <a class="bouton" href="M%C3%B6lkky.html">Jouer</a>
+    </main>
+    <script type="module">
+        import { initReglages } from './reglages.js';
+        initReglages();
+    </script>
+</body>
+</html>

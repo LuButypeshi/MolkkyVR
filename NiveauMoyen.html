@@ -41,6 +41,7 @@
         import * as THREE from 'three';
         import * as CANNON from 'cannon-es';
         import { VRButton } from 'three/addons/webxr/VRButton.js';
+        import { initReglages, enregistrerLumiere } from './reglages.js';
 
         // =====================================================
         // 1. RÉGLAGES
@@ -94,13 +95,16 @@
             renderer.setSize(innerWidth, innerHeight);
         });
 
-        scene.add(new THREE.HemisphereLight("#dfffff", "#4a6633", 1.2));
+        const hemi = new THREE.HemisphereLight("#dfffff", "#4a6633", 1.2);
+        scene.add(hemi);
         const soleil = new THREE.DirectionalLight("#ffffff", 1.5);
         soleil.position.set(2, 4, 0);
         soleil.target.position.set(0, 0, -2);
         soleil.castShadow = true;
         Object.assign(soleil.shadow.camera, { left: -4, right: 4, top: 4, bottom: -4 });
         scene.add(soleil, soleil.target);
+        enregistrerLumiere(hemi);
+        enregistrerLumiere(soleil);
 
         // Sol en herbe
         const texHerbe = chargeur.load("image/herbe_sol.png");
@@ -665,6 +669,7 @@
 
         dessinerScores();
         nouvellePartie();
+        initReglages();
     </script>
 </body>
 </html>
