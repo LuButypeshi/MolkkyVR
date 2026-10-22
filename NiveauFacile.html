@@ -373,6 +373,84 @@
         }
 
         // =====================================================
+        // 7 bis. ÉCRAN VUE DE DESSUS (au-dessus des quilles, il faut lever la tête)
+        // =====================================================
+        const largeurEcranPixels = 640;                 // largeur du dessin (canvas) en pixels
+        const hauteurEcranPixels = 480;                 // hauteur du dessin (canvas) en pixels
+        const centreQuillesZ = -DISTANCE_LANCER - 0.225; // milieu des 4 rangées de quilles (axe z)
+        const hauteurEcran = 3.2;                       // hauteur de l'écran au-dessus du sol (en mètres)
+        const largeurTerrainVu = 2;                     // largeur de terrain montrée sur l'écran (en mètres)
+        const pixelsParMetre = largeurEcranPixels / largeurTerrainVu;   // échelle : 1 mètre = 320 pixels
+        const rayonQuillePixels = QUILLE.rayon * pixelsParMetre;        // taille d'une quille dessinée
+
+        // Le canvas sur lequel on dessine, puis transformé en texture pour l'écran 3D
+        const canvasVueDessus = document.createElement("canvas");
+        canvasVueDessus.width = largeurEcranPixels;
+        canvasVueDessus.height = hauteurEcranPixels;
+        const pinceauVueDessus = canvasVueDessus.getContext("2d");
+        const textureVueDessus = new THREE.CanvasTexture(canvasVueDessus);
+        textureVueDessus.colorSpace = THREE.SRGBColorSpace;
+
+        // L'écran : un rectangle placé haut au-dessus des quilles, penché vers le joueur
+        const ecranVueDessus = new THREE.Mesh(
+            new THREE.PlaneGeometry(1.6, 1.2),
+            new THREE.MeshBasicMaterial({ map: textureVueDessus }));
+        ecranVueDessus.position.set(0, hauteurEcran, centreQuillesZ);
+        ecranVueDessus.lookAt(0, 1.6, 0);               // il regarde la zone de lancer
+        scene.add(ecranVueDessus);
+
+        // Transforme une position du terrain (x, z en mètres) en position sur l'écran (en pixels)
+        // Les quilles les plus loin du joueur sont en haut de l'écran
+        function versPixels(positionX, positionZ) {
+            let pixelX = largeurEcranPixels / 2 + positionX * pixelsParMetre;
+            let pixelY = hauteurEcranPixels / 2 + (positionZ - centreQuillesZ) * pixelsParMetre;
+            // une quille partie trop loin reste visible collée au bord de l'écran
+            pixelX = Math.min(largeurEcranPixels - rayonQuillePixels, Math.max(rayonQuillePixels, pixelX));
+            pixelY = Math.min(hauteurEcranPixels - rayonQuillePixels, Math.max(rayonQuillePixels, pixelY));
+            return { pixelX, pixelY };
+        }
+
+        function dessinerVueDessus() {
+            const pinceau = pinceauVueDessus;
+
+            // fond vert (l'herbe) et cadre
+            pinceau.fillStyle = "#4f9d63";
+            pinceau.fillRect(0, 0, largeurEcranPixels, hauteurEcranPixels);
+            pinceau.strokeStyle = "#13241c";
+            pinceau.lineWidth = 8;
+            pinceau.strokeRect(0, 0, largeurEcranPixels, hauteurEcranPixels);
+
+            // petit titre en haut à gauche
+            pinceau.fillStyle = "#ffffff";
+            pinceau.font = "bold 24px system-ui, sans-serif";
+            pinceau.textAlign = "left";
+            pinceau.textBaseline = "alphabetic";
+            pinceau.fillText("Vue de dessus", 16, 34);
+
+            // chaque quille : un rond avec son numéro dedans
+            for (const quille of quilles) {
+                const { pixelX, pixelY } = versPixels(quille.corps.position.x, quille.corps.position.z);
+                const estTombee = inclinaisonDeg(quille.corps.quaternion) >= 60;   // même règle que pour le score
+
+                pinceau.beginPath();
+                pinceau.arc(pixelX, pixelY, rayonQuillePixels, 0, Math.PI * 2);
+                pinceau.fillStyle = estTombee ? "#c8553d" : "#f4e6c8";   // rouge si tombée, bois clair si debout
+                pinceau.fill();
+                pinceau.lineWidth = 3;
+                pinceau.strokeStyle = "#13241c";
+                pinceau.stroke();
+
+                pinceau.fillStyle = estTombee ? "#ffffff" : "#13241c";
+                pinceau.font = "bold 24px system-ui, sans-serif";
+                pinceau.textAlign = "center";
+                pinceau.textBaseline = "middle";
+                pinceau.fillText(quille.numero, pixelX, pixelY + 1);
+            }
+
+            textureVueDessus.needsUpdate = true;        // on prévient Three.js que l'image a changé
+        }
+
+        // =====================================================
         // 8. MANETTES VR : joysticks, saisie (grip), lancer
         // =====================================================
         const VITESSE_DEPLACEMENT = 2;   // m/s
@@ -641,6 +719,7 @@
 
         let dernier = performance.now();
         let compteurTableau = 0;
+        let compteurVueDessus = 0;     // temps écoulé depuis le dernier dessin de l'écran vue de dessus
 
         renderer.setAnimationLoop((maintenant) => {
             const dt = Math.min((maintenant - dernier) / 1000, 0.1);
@@ -663,6 +742,8 @@
             if (partie.chrono) partie.temps += dt;
             compteurTableau += dt;
             if (compteurTableau > 0.25) { compteurTableau = 0; dessinerTableau(); }   // le chrono se met à jour 4 fois par seconde
+            compteurVueDessus += dt;
+            if (compteurVueDessus > 0.1) { compteurVueDessus = 0; dessinerVueDessus(); }   // l'écran vue de dessus se met à jour 10 fois par seconde
 
             renderer.render(scene, camera);
         });
