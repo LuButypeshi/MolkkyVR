@@ -42,6 +42,7 @@
         import * as CANNON from 'cannon-es';
         import { VRButton } from 'three/addons/webxr/VRButton.js';
         import { initReglages, enregistrerLumiere } from './reglages.js';
+        import { creerSpectateurs } from './spectateurs.js';
 
         // =====================================================
         // 1. RÉGLAGES
@@ -137,6 +138,9 @@
             pied.castShadow = true;
             scene.add(pied);
         }
+
+        // Petits bonhommes au bord du terrain : ils sautent quand on marque, s'assoient quand on rate
+        const spectateurs = creerSpectateurs(scene, DISTANCE_LANCER);
 
         // =====================================================
         // 3. PHYSIQUE
@@ -284,6 +288,7 @@
             });
             tempsLancer = 0;
             curseur = 0;
+            spectateurs.reinitialiser();
             boiteNom.style.display = "none";
             dessinerTableau();
         }
@@ -670,6 +675,10 @@
             monde.removeBody(batonCorps);
             remettreBatonSurTable();
 
+            // Réaction des spectateurs à ce lancer (finDePartie la prolonge si la partie se termine)
+            if (points > 0 && total !== SCORE_DEPASSEMENT) spectateurs.celebrer(2);
+            else spectateurs.decevoir(2.5);
+
             if (total === OBJECTIF) finDePartie(true);
             else if (partie.echecs >= ECHECS_MAX) finDePartie(false);
             else { partie.lancer++; partie.etat = "pret"; }
@@ -680,6 +689,8 @@
             partie.etat = "nom";
             partie.chrono = false;
             partie.victoire = victoire;
+            if (victoire) spectateurs.celebrer(Infinity);   // ils sautent jusqu'à la prochaine partie
+            else spectateurs.decevoir(Infinity);           // ils restent assis jusqu'à la prochaine partie
             partie.couleur = victoire ? "#2f7d46" : "#c8553d";
             // Le résultat est enregistré tout de suite sous le nom "Joueur" ; la saisie du nom le renomme ensuite
             partie.idEntree = Date.now();
@@ -739,6 +750,7 @@
                 surveillerLancer(dt);
             }
 
+            spectateurs.mettreAJour(dt);
             if (partie.chrono) partie.temps += dt;
             compteurTableau += dt;
             if (compteurTableau > 0.25) { compteurTableau = 0; dessinerTableau(); }   // le chrono se met à jour 4 fois par seconde
