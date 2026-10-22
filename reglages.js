@@ -14,6 +14,7 @@ function sauver() {
 let ctx = null;
 function audioCtx() {
     ctx ??= new AudioContext();
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
     return ctx;
 }
 
@@ -30,6 +31,39 @@ export function jouerClack() {
     osc.start(t);
     osc.stop(t + 0.13);
 }
+
+// ---------- Sons du jeu (fichiers dans audio/) ----------
+const FICHIERS_SONS = { impact: "audio/sonBaton.mp3", defaite: "audio/sonDefaite.mp3" };
+const sons = {};   // sons décodés, prêts à être joués
+
+async function chargerSons() {
+    for (const [nom, fichier] of Object.entries(FICHIERS_SONS)) {
+        try {
+            const reponse = await fetch(fichier);
+            sons[nom] = await audioCtx().decodeAudioData(await reponse.arrayBuffer());
+        } catch (erreur) {
+            console.warn(`Son introuvable : ${fichier}`, erreur);
+        }
+    }
+}
+
+function jouerSon(nom) {
+    const buffer = sons[nom];
+    if (!buffer) return;
+    const c = audioCtx();
+    const source = c.createBufferSource();
+    const gain = c.createGain();
+    source.buffer = buffer;
+    gain.gain.value = reglages.effets;
+    source.connect(gain).connect(c.destination);
+    source.start();
+}
+
+// Impact du bâton contre une quille
+export function jouerImpact() { jouerSon("impact"); }
+
+// Dernier lancer raté avant la défaite
+export function jouerRate() { jouerSon("defaite"); }
 
 // ---------- Musique de fond ----------
 // Si audio/musique.mp3 existe, c'est lui qui est joué. Sinon, une petite musique est générée.
@@ -185,4 +219,5 @@ export function initReglages() {
 
     afficher();
     initMusique();
+    chargerSons();
 }

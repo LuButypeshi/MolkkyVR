@@ -41,7 +41,7 @@
         import * as THREE from 'three';
         import * as CANNON from 'cannon-es';
         import { VRButton } from 'three/addons/webxr/VRButton.js';
-        import { initReglages, enregistrerLumiere } from './reglages.js';
+        import { initReglages, enregistrerLumiere, jouerImpact, jouerRate } from './reglages.js';
         import { creerSpectateurs } from './spectateurs.js';
 
         // =====================================================
@@ -220,6 +220,14 @@
         scene.add(baton);
         const batonCorps = new CANNON.Body({ mass: BATON.masse, material: boisPhys });
         batonCorps.addShape(new CANNON.Cylinder(BATON.rayon, BATON.rayon, BATON.hauteur, 12));
+        // Son d'impact : un seul par lancer, au premier contact avec une quille
+        let impactJoue = false;
+        batonCorps.addEventListener("collide", (e) => {
+            if (!impactJoue && quilles.some((q) => q.corps === e.body)) {
+                impactJoue = true;
+                jouerImpact();
+            }
+        });
 
         function remettreBatonSurTable() {
             baton.position.copy(POS_BATON);
@@ -520,6 +528,7 @@
         }
 
         function envoyerBaton(v) {
+            impactJoue = false;
             batonCorps.position.copy(baton.position);
             batonCorps.quaternion.copy(baton.quaternion);
             batonCorps.velocity.set(v.x, v.y, v.z);
@@ -648,6 +657,7 @@
 
             if (points === 0) {
                 partie.echecs++;
+                if (partie.echecs >= ECHECS_MAX) jouerRate();
                 partie.message = `Raté ! Aucun point (échec ${partie.echecs}/${ECHECS_MAX})`;
                 partie.couleur = "#c8553d";
             } else {
