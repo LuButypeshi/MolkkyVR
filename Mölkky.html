@@ -14,6 +14,7 @@
         {
             "imports": {
                 "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
                 "cannon-es": "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js"
             }
         }
@@ -24,6 +25,9 @@
     <script type="module">
         import * as THREE from 'three'; 
         import * as CANNON from 'cannon-es';
+        import { VRButton } from 'three/addons/webxr/VRButton.js';
+        import { initReglages, enregistrerLumiere, jouerClack } from './reglages.js';
+        import { PanneauVR, ControlesVR, fond, bandeauTitre, bouton, ecrire, lignesReglages, actionReglage, donneesReglages } from './vr.js';
 
         const info = document.getElementById('info');
         const onFrame = [];  //ce qui se passe à chaque image
@@ -31,9 +35,11 @@
     // Création de la scène initiale 
         const renderer = new THREE.WebGLRenderer({antialias: true});
         renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+        renderer.xr.enabled = true;
         renderer.setSize(innerWidth, innerHeight);
         renderer.shadowMap.enabled = true;
         document.body.appendChild(renderer.domElement);
+        document.body.appendChild(VRButton.createButton(renderer));
 
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87ceeb);   // secours le temps que l'image du ciel charge
@@ -49,11 +55,14 @@
         camera.position.set(0, 1.6, 0.6);
         camera.lookAt(0, 0.5, -2);
 
-        scene.add(new THREE.HemisphereLight("#dfffff", "#4a6633", 1.2));
+        const hemi = new THREE.HemisphereLight("#dfffff", "#4a6633", 1.2);
+        scene.add(hemi);
+        enregistrerLumiere(hemi);
         const sun  = new THREE.DirectionalLight("#ffffff", 1.5);
         sun.position.set(2, 4, 2);
         sun.castShadow = true;
         scene.add(sun);
+        enregistrerLumiere(sun);
 
         // Sol en herbe
         const texHerbe = chargeur.load("image/herbe_sol.png");
@@ -80,9 +89,8 @@
             last = now;
             for (const f of onFrame) f(dt);
             renderer.render(scene, camera);
-            requestAnimationFrame(frame);
         }
-        requestAnimationFrame(frame);
+        renderer.setAnimationLoop(frame);   // fonctionne aussi en réalité virtuelle
 
         // Création des quilles pour le menu 
         const PIN = { radius: 0.07, height: 0.42, mass: 0.35 };
@@ -210,11 +218,71 @@
         function updateGlow() {
             for (const p of pins) {
                 p.mesh.material.emissive.set("#f2b63d");
-                p.mesh.material.emissiveIntensity = p === hovered ?
+                p.mesh.material.emissiveIntensity = (p === hovered || p === hoveredVR) ?
                 0.45 : 0;
             }
         }
         onFrame.push(updateGlow);
+
+        //Interface VR : message et réglages dans un panneau, quilles visées avec la manette
+        let texteInfo = "Bienvenue dans mini mölkky !!!";
+        function dire(texte) {
+            texteInfo = texte;
+            info.textContent = texte;
+        }
+
+        let hoveredVR = null;   // quille visée avec une manette
+        const panneauMenu = new PanneauVR({ largeur: 1.0, hauteur: 0.75, dessiner: dessinerMenuVR });
+        panneauMenu.mesh.position.set(0, 1.75, -1.5);
+        scene.add(panneauMenu.mesh);
+
+        const controles = new ControlesVR({
+            renderer,
+            scene,
+            camera,
+            placement: { distance: 1.5, hauteur: 0.15 },
+            panneaux: [panneauMenu],
+            cibles: () => [...pins.map((p) => p.mesh), panneauMenu.mesh],
+            auSurvol: (touche) => {
+                const pin = touche && state === "ready" ? pins.find((p) => p.mesh === touche.objet) : null;
+                hoveredVR = pin ?? null;
+            },
+            auClic: (touche) => {
+                if (touche.objet.userData.panneau) { cliquerMenuVR(touche); return; }
+                const pin = pins.find((p) => p.mesh === touche.objet);
+                if (pin && state === "ready") throwAt(pin);
+            }
+        });
+        onFrame.push(() => {
+            if (!renderer.xr.isPresenting) return;
+            controles.update();
+            panneauMenu.mettreAJour(`${texteInfo}|${donneesReglages()}`);
+        });
+
+        function cliquerMenuVR(touche) {
+            const zone = touche.objet.userData.panneau.zoneSous(touche.uv);
+            if (!zone) return;
+            if (zone.action === "index") window.location.href = "index.html";
+            else if (zone.action === "reglages") panneauMenu.ecran = "reglages";
+            else if (zone.action === "retour") panneauMenu.ecran = "accueil";
+            else actionReglage(zone.action);
+        }
+
+        function dessinerMenuVR(p) {
+            fond(p);
+            if (p.ecran === "reglages") {
+                bandeauTitre(p, "Paramètres");
+                lignesReglages(p, 150);
+                bouton(p, { x: 40, y: 450, w: 340, h: 90, texte: "Réinitialiser", action: "reinitialiser", taille: 30 });
+                bouton(p, { x: 388, y: 450, w: 340, h: 90, texte: "Retour", action: "retour", taille: 34 });
+                return;
+            }
+            bandeauTitre(p, "MÖLKKY");
+            ecrire(p, texteInfo, p.W / 2, 190, { taille: 36, gras: true });
+            ecrire(p, "Vise une quille, puis gâchette pour lancer", p.W / 2, 250, { taille: 24 });
+            bouton(p, { x: 40, y: 310, w: 340, h: 110, texte: "Accueil", action: "index", taille: 34 });
+            bouton(p, { x: 388, y: 310, w: 340, h: 110, texte: "Paramètres", action: "reglages", taille: 30 });
+        }
 
                 //Vol scripté du Mölkky vers la quille
 
@@ -253,7 +321,7 @@
             pins.forEach(standPin);
             state = "ready";
             roundTime = 0;
-            if (message) info.textContent = message;
+            if (message) dire(message);
         }
 
         function watchRound(dt) {
@@ -294,19 +362,6 @@
         }
 
         //ajout son et confettis
-        let audio = null;
-        function clack () {
-            audio ??= new AudioContext();
-            const t = audio.currentTime;
-            const osc = audio.createOscillator();
-            const gain = audio.createGain();
-            osc.frequency.value = 1650;
-            gain.gain.setValueAtTime(0.5, t);
-            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-            osc.connect(gain).connect(audio.destination);
-            osc.start(t);
-            osc.stop(t + 0.13);
-        }
 
         const bits = [];
         function confetti(pin) {
@@ -339,7 +394,7 @@
         });
 
         onChoose.push((pin) => {
-            clack();
+            jouerClack();
             confetti(pin);
             if (pin.id === "facile") {
                 setTimeout(() => { window.location.href = "NiveauFacile.html"; }, 900);
@@ -352,6 +407,7 @@
             }
         });
         
+        initReglages();
     </script>
 </body>
 </html>

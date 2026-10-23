@@ -41,7 +41,7 @@
         import * as THREE from 'three';
         import * as CANNON from 'cannon-es';
         import { VRButton } from 'three/addons/webxr/VRButton.js';
-        import { initReglages, enregistrerLumiere, jouerImpact, jouerRate, jouerVictoire } from './reglages.js';
+        import { initReglages, enregistrerLumiere, jouerImpact, jouerRate, jouerVictoire, modifierReglage, reglages } from './reglages.js';
         import { creerSpectateurs } from './spectateurs.js';
 
         // =====================================================
@@ -481,6 +481,7 @@
             m.addEventListener("squeezestart", () => saisirBaton(m));                            // grip appuyé : on saisit
             m.addEventListener("squeezeend", () => { if (manetteActive === m) lacherBaton(); });   // grip relâché : on lance
             m.addEventListener("selectstart", () => {                                              // gâchette
+                if (panneauVR.clic(m)) return;
                 if (partie.etat === "nom") validerNom(nomVR.map((i) => LETTRES[i]).join(""));      //   valider le nom
                 else if (partie.etat === "fini") nouvellePartie();                                  //   rejouer
             });
@@ -573,7 +574,7 @@
                 if (source.handedness === "right") rotation = x;
                 if (Math.abs(x) + Math.abs(y) > Math.abs(nx) + Math.abs(ny)) { nx = x; ny = y; }
                 const appuye = !!pad.buttons[4]?.pressed;
-                if (appuye && !boutonAvant[source.handedness]) nouvellePartie();
+                if (appuye && !boutonAvant[source.handedness] && partie.etat !== "nom") nouvellePartie();
                 boutonAvant[source.handedness] = appuye;
             }
             if (partie.etat === "nom") { choisirLettre(nx, ny); return; }
@@ -714,6 +715,7 @@
             console.table(partie.historique);
             champNom.value = "";
             boiteNom.style.display = "flex";
+            panneauVR.ouvrirNom();
             if (!renderer.xr.isPresenting) champNom.focus();
         }
 
@@ -739,6 +741,151 @@
         document.getElementById("btnRecommencer").onclick = nouvellePartie;
         document.getElementById("btnMenu").onclick = () => { location.href = "M%C3%B6lkky.html"; };
 
+        // =====================================================
+        // 11b. PANNEAU DE MAIN (VR) : menu accroché à une manette (bouton B / Y),
+        //      visé avec l'autre manette ; saisie du nom en fin de partie
+        // =====================================================
+        const PANNEAU_W = 512, PANNEAU_H = 640;
+        const LIGNES_REGLAGE = [["musique", "Musique"], ["effets", "Effets"], ["luminosite", "Lumière"]];
+        const ZONES_MENU = [
+            { x: 40, y: 90, w: 432, h: 60, action: "recommencer", texte: "Recommencer" },
+            { x: 40, y: 165, w: 432, h: 60, action: "menu", texte: "Menu principal" },
+            ...LIGNES_REGLAGE.flatMap(([cle], k) => [
+                { x: 290, y: 300 + k * 70, w: 64, h: 54, action: `moins:${cle}`, texte: "−" },
+                { x: 430, y: 300 + k * 70, w: 64, h: 54, action: `plus:${cle}`, texte: "+" }
+            ]),
+            { x: 40, y: 530, w: 432, h: 60, action: "fermer", texte: "Fermer" }
+        ];
+        const ZONES_NOM = [
+            ...[0, 1, 2].map((i) => ({ x: 80 + i * 120, y: 150, w: 100, h: 130, action: `lettre:${i}` })),
+            { x: 40, y: 420, w: 432, h: 60, action: "valider", texte: "Valider" }
+        ];
+
+        const rayonPanneau = new THREE.Raycaster();
+        const origineRayon = new THREE.Vector3(), directionRayon = new THREE.Vector3(), orientationRayon = new THREE.Quaternion();
+        const boutonBAvant = [false, false];
+        const panneauxMain = [0, 1].map((i) => {
+            const manette = renderer.xr.getController(i);
+            manette.addEventListener("connected", (e) => { manette.userData.source = e.data; });
+            const c = document.createElement("canvas");
+            c.width = PANNEAU_W; c.height = PANNEAU_H;
+            const texture = new THREE.CanvasTexture(c);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.25),
+                new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide }));
+            mesh.position.set(0, 0.09, -0.02);   // au-dessus de la manette
+            mesh.rotation.x = -0.6;              // incliné vers le visage
+            mesh.visible = false;
+            manette.add(mesh);
+            return { manette, mesh, g: c.getContext("2d"), texture, ouvert: false, pointeur: null, survol: null, cle: "" };
+        });
+
+        function ouvrirPanneau(p) { panneauxMain.forEach((q) => { q.ouvert = q === p; }); }
+        function fermerPanneaux() { panneauxMain.forEach((q) => { q.ouvert = false; }); }
+
+        // Quelle zone du panneau se trouve sous un point de la surface (coordonnées uv de 0 à 1)
+        function zoneSous(uv) {
+            const x = uv.x * PANNEAU_W, y = (1 - uv.y) * PANNEAU_H;
+            const zones = partie.etat === "nom" ? ZONES_NOM : ZONES_MENU;
+            return zones.find((z) => x >= z.x && x <= z.x + z.w && y >= z.y && y <= z.y + z.h) ?? null;
+        }
+
+        function executer(action) {
+            if (action === "recommencer") { nouvellePartie(); fermerPanneaux(); }
+            else if (action === "menu") location.href = "M%C3%B6lkky.html";
+            else if (action === "fermer") fermerPanneaux();
+            else if (action === "valider") { if (partie.etat === "nom") validerNom(nomVR.map((i) => LETTRES[i]).join("")); }
+            else if (action.startsWith("lettre:")) curseur = Number(action.split(":")[1]);
+            else if (action.startsWith("moins:")) modifierReglage(action.slice(6), -0.1);
+            else if (action.startsWith("plus:")) modifierReglage(action.slice(5), 0.1);
+        }
+
+        function dessinerPanneau(p) {
+            const g = p.g, nom = partie.etat === "nom";
+            g.textBaseline = "middle";
+            g.fillStyle = "#f4e6c8"; g.fillRect(0, 0, PANNEAU_W, PANNEAU_H);
+            g.fillStyle = "#4f9d63"; g.fillRect(0, 0, PANNEAU_W, 64);
+            g.fillStyle = "#ffffff"; g.font = "bold 34px system-ui, sans-serif";
+            g.textAlign = "center";
+            g.fillText(nom ? "TON NOM" : "MÖLKKY", PANNEAU_W / 2, 34);
+
+            for (const z of nom ? ZONES_NOM : ZONES_MENU) {
+                const lettre = z.action.startsWith("lettre:") ? Number(z.action.split(":")[1]) : -1;
+                const fond = lettre >= 0 ? (lettre === curseur ? "#ffb319" : "#d9c9a3") : "#ffb319";
+                g.fillStyle = p.survol === z ? "#ffd27a" : fond;
+                g.fillRect(z.x, z.y, z.w, z.h);
+                g.fillStyle = "#13241c";
+                if (lettre >= 0) {
+                    g.font = "bold 90px system-ui, sans-serif";
+                    g.fillText(LETTRES[nomVR[lettre]], z.x + z.w / 2, z.y + z.h / 2 + 4);
+                } else {
+                    g.font = "bold 28px system-ui, sans-serif";
+                    g.fillText(z.texte, z.x + z.w / 2, z.y + z.h / 2 + 2);
+                }
+            }
+
+            if (nom) {
+                g.font = "24px system-ui, sans-serif";
+                g.fillText("Joystick haut / bas : la lettre", PANNEAU_W / 2, 300);
+                g.fillText("Joystick gauche / droite : la case", PANNEAU_W / 2, 336);
+                g.fillText("Pointer + gâchette : cliquer", PANNEAU_W / 2, 372);
+                g.fillText("Bouton B / Y : fermer", PANNEAU_W / 2, 520);
+            } else {
+                g.fillStyle = "#13241c";
+                g.textAlign = "left";
+                g.font = "bold 26px system-ui, sans-serif";
+                g.fillText("Son et lumière", 40, 268);
+                LIGNES_REGLAGE.forEach(([cle, libelle], k) => {
+                    const y = 300 + k * 70 + 27;
+                    g.font = "24px system-ui, sans-serif"; g.textAlign = "left";
+                    g.fillText(libelle, 40, y);
+                    g.font = "bold 22px system-ui, sans-serif"; g.textAlign = "center";
+                    g.fillText(`${Math.round(reglages[cle] * 100)} %`, 392, y);
+                });
+            }
+            p.texture.needsUpdate = true;
+        }
+
+        const rayonDirection = (manette) => {
+            manette.getWorldPosition(origineRayon);
+            manette.getWorldQuaternion(orientationRayon);
+            directionRayon.set(0, 0, -1).applyQuaternion(orientationRayon);
+            rayonPanneau.set(origineRayon, directionRayon);
+        };
+
+        // À appeler à chaque image en VR : ouverture avec B / Y, visée et survol
+        function mettreAJourPanneaux() {
+            panneauxMain.forEach((p, i) => {
+                const appuye = !!p.manette.userData.source?.gamepad?.buttons[5]?.pressed;
+                if (appuye && !boutonBAvant[i] && !manetteActive) {
+                    if (p.ouvert) fermerPanneaux(); else ouvrirPanneau(p);
+                }
+                boutonBAvant[i] = appuye;
+            });
+            panneauxMain.forEach((p, i) => {
+                p.mesh.visible = p.ouvert && !manetteActive;
+                p.survol = null;
+                if (!p.mesh.visible) return;
+                // on vise avec l'autre manette si elle est connectée, sinon avec celle qui porte le panneau
+                p.pointeur = panneauxMain[1 - i].manette.userData.source ? panneauxMain[1 - i].manette : p.manette;
+                rayonDirection(p.pointeur);
+                const touche = rayonPanneau.intersectObject(p.mesh)[0];
+                p.survol = touche?.uv ? zoneSous(touche.uv) : null;
+                const cle = [partie.etat, p.survol?.action, reglages.musique, reglages.effets, reglages.luminosite, nomVR.join(), curseur].join("|");
+                if (cle !== p.cle) { p.cle = cle; dessinerPanneau(p); }
+            });
+        }
+
+        const panneauVR = {
+            ouvrirNom() { ouvrirPanneau(panneauxMain[1]); },   // saisie du nom : panneau sur la manette droite
+            clic(manette) {                                     // gâchette : vrai si un bouton du panneau a été activé
+                const p = panneauxMain.find((q) => q.ouvert && q.pointeur === manette);
+                if (!p || !p.survol) return false;
+                executer(p.survol.action);
+                return true;
+            }
+        };
+
         let dernier = performance.now();
         let compteurTableau = 0;
         let compteurVueDessus = 0;     // temps écoulé depuis le dernier dessin de l'écran vue de dessus
@@ -753,7 +900,7 @@
                 q.mesh.quaternion.copy(q.corps.quaternion);
             }
 
-            if (renderer.xr.isPresenting) lireJoysticks(dt);
+            if (renderer.xr.isPresenting) { lireJoysticks(dt); mettreAJourPanneaux(); }
             if (partie.etat === "saisi" && manetteActive) { suivreManette(maintenant); mettreAJourAssistance(); }
             if (partie.etat === "vol") {
                 baton.position.copy(batonCorps.position);

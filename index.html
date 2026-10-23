@@ -22,10 +22,21 @@
         .bouton {
             padding: 16px 56px; border-radius: 12px; background: #eba10d; color: #13241c;
             font-size: 26px; font-weight: 700; text-decoration: none; box-shadow: 0 6px 0 #8868b8;
+            border: 0; font-family: inherit; cursor: pointer;
         }
         .bouton:active { transform: translateY(4px); box-shadow: 0 2px 0 #c98a00; }
+        .bouton.secondaire { background: #ffffff; font-size: 20px; padding: 12px 36px; box-shadow: 0 4px 0 #9aa5a0; }
+        .etat { margin: 0; padding: 8px 14px; border-radius: 8px; background: rgba(251, 248, 239, 0.92); font-size: 16px; max-width: 420px; }
         .aide { margin: 0; padding: 8px 14px; border-radius: 8px; background: rgba(251, 248, 239, 0.92); font-size: 15px; }
     </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
 </head>
 <body>
     <div class="herbe"></div>
@@ -35,10 +46,134 @@
             <p>Mini mölkky en 3D</p>
         </div>
         <a class="bouton" href="M%C3%B6lkky.html">Jouer</a>
+        <button class="bouton secondaire" id="btnVR" type="button" hidden>Entrer en VR</button>
+        <p class="etat" id="etatVR">Vérification du casque…</p>
     </main>
     <script type="module">
-        import { initReglages } from './reglages.js';
+        import * as THREE from 'three';
+        import { initReglages, enregistrerLumiere } from './reglages.js';
+        import { PanneauVR, ControlesVR, fond, bandeauTitre, bouton, ecrire, COULEURS, lignesReglages, actionReglage, donneesReglages } from './vr.js';
+
+        // Réglages en mode fenêtre : panneau Paramètres en haut à droite
         initReglages();
+
+        // Réalité virtuelle : l'accueil est reconstruit en 3D, avec des boutons à viser à la manette.
+        // Le bouton « Entrer en VR » n'apparaît que si le casque est disponible.
+        const boutonVR = document.getElementById('btnVR');
+        const etatVR = document.getElementById('etatVR');
+        let vr = null;   // scène 3D, créée seulement si le casque est disponible
+
+        if (!navigator.xr) {
+            etatVR.textContent = 'Réalité virtuelle non disponible dans ce navigateur.';
+        } else {
+            navigator.xr.isSessionSupported('immersive-vr')
+                .then((ok) => {
+                    if (ok) {
+                        preparerVR();
+                        boutonVR.hidden = false;
+                        etatVR.textContent = 'Casque détecté : appuie sur Entrer en VR.';
+                    } else {
+                        etatVR.textContent = 'Aucun casque VR détecté. Ouvre cette page dans le navigateur du casque.';
+                    }
+                })
+                .catch(() => { etatVR.textContent = 'Impossible de vérifier le casque.'; });
+        }
+
+        boutonVR.addEventListener('click', () => {
+            // La demande de session part directement du clic
+            navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'bounded-floor'] })
+                .then((session) => vr.renderer.xr.setSession(session))
+                .catch((erreur) => console.warn('Réalité virtuelle indisponible :', erreur));
+        });
+
+        function preparerVR() {
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+            renderer.setSize(innerWidth, innerHeight);
+            renderer.xr.enabled = true;
+            renderer.domElement.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;display:none;';
+            document.body.append(renderer.domElement);
+
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87ceeb);   // secours le temps que le ciel charge
+            const chargeur = new THREE.TextureLoader();
+            chargeur.load('image/sky.jpg', (tex) => {
+                tex.mapping = THREE.EquirectangularReflectionMapping;
+                tex.colorSpace = THREE.SRGBColorSpace;
+                scene.background = tex;
+            });
+
+            const hemi = new THREE.HemisphereLight('#dfffff', '#4a6633', 1.2);
+            const soleil = new THREE.DirectionalLight('#ffffff', 1.5);
+            soleil.position.set(2, 4, 2);
+            scene.add(hemi, soleil);
+            enregistrerLumiere(hemi);
+            enregistrerLumiere(soleil);
+
+            const texHerbe = chargeur.load('image/herbe_sol.png');
+            texHerbe.colorSpace = THREE.SRGBColorSpace;
+            texHerbe.wrapS = texHerbe.wrapT = THREE.RepeatWrapping;
+            texHerbe.repeat.set(15, 15);
+            const herbe = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), new THREE.MeshStandardMaterial({ map: texHerbe }));
+            herbe.rotation.x = -Math.PI / 2;
+            scene.add(herbe);
+
+            const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.05, 100);
+
+            const panneau = new PanneauVR({ largeur: 1.0, hauteur: 0.75, dessiner: dessinerAccueil });
+            panneau.mesh.position.set(0, 1.5, -1.6);
+            scene.add(panneau.mesh);
+
+            const controles = new ControlesVR({
+                renderer,
+                scene,
+                camera,
+                placement: { distance: 1.5, hauteur: -0.1 },
+                panneaux: [panneau],
+                cibles: () => [panneau.mesh],
+                auClic: (touche) => cliquerAccueil(touche)
+            });
+
+            renderer.setAnimationLoop(() => {
+                if (!renderer.xr.isPresenting) return;
+                controles.update();
+                panneau.mettreAJour(donneesReglages());
+                renderer.render(scene, camera);
+            });
+            renderer.xr.addEventListener('sessionstart', () => { renderer.domElement.style.display = 'block'; });
+            renderer.xr.addEventListener('sessionend', () => { renderer.domElement.style.display = 'none'; });
+
+            vr = { renderer, panneau, controles, camera };
+        }
+
+        function dessinerAccueil(p) {
+            fond(p);
+            if (p.ecran === 'reglages') {
+                bandeauTitre(p, 'Paramètres');
+                lignesReglages(p, 150);
+                bouton(p, { x: 40, y: 450, w: 340, h: 90, texte: 'Réinitialiser', action: 'reinitialiser', taille: 30 });
+                bouton(p, { x: 388, y: 450, w: 340, h: 90, texte: 'Retour', action: 'retour', taille: 34 });
+                return;
+            }
+            p.g.fillStyle = COULEURS.bandeau;
+            p.g.fillRect(40, 40, p.W - 80, 170);
+            ecrire(p, 'MÖLKKY', p.W / 2, 110, { taille: 84, gras: true, couleur: COULEURS.blanc });
+            ecrire(p, 'Mini mölkky en 3D', p.W / 2, 175, { taille: 30, couleur: COULEURS.blanc });
+            bouton(p, { x: 184, y: 250, w: 400, h: 110, texte: 'Jouer', action: 'jouer', taille: 56 });
+            bouton(p, { x: 184, y: 390, w: 400, h: 80, texte: 'Paramètres', action: 'reglages', taille: 34 });
+            bouton(p, { x: 184, y: 500, w: 400, h: 60, texte: 'Quitter la VR', action: 'quitter', couleur: '#ffffff', taille: 28 });
+        }
+
+        function cliquerAccueil(touche) {
+            const p = touche.objet.userData.panneau;
+            const zone = p.zoneSous(touche.uv);
+            if (!zone) return;
+            if (zone.action === 'jouer') window.location.href = 'M%C3%B6lkky.html';
+            else if (zone.action === 'reglages') p.ecran = 'reglages';
+            else if (zone.action === 'retour') p.ecran = 'accueil';
+            else if (zone.action === 'quitter') vr.renderer.xr.getSession()?.end();
+            else actionReglage(zone.action);
+        }
     </script>
 </body>
 </html>

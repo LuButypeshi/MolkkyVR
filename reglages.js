@@ -189,6 +189,22 @@ function appliquerTout() {
     appliquerLuminosite();
 }
 
+// Réglage depuis la VR (boutons − / +)
+const BORNES_REGLAGES = { musique: [0, 1], effets: [0, 1], luminosite: [0.4, 1.6] };
+export function modifierReglage(cle, delta) {
+    const [min, max] = BORNES_REGLAGES[cle];
+    reglages[cle] = Math.round(Math.min(max, Math.max(min, reglages[cle] + delta)) * 100) / 100;
+    appliquerTout();
+    sauver();
+}
+
+// Remet les réglages par défaut (utilisé par les panneaux VR)
+export function reinitialiserReglages() {
+    Object.assign(reglages, DEFAUT);
+    appliquerTout();
+    sauver();
+}
+
 // ---------- Panneau Paramètres (bouton en haut à droite) ----------
 export function initReglages() {
     const style = document.createElement("style");
