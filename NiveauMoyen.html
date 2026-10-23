@@ -41,7 +41,7 @@
         import * as THREE from 'three';
         import * as CANNON from 'cannon-es';
         import { VRButton } from 'three/addons/webxr/VRButton.js';
-        import { initReglages, enregistrerLumiere, jouerImpact, jouerRate } from './reglages.js';
+        import { initReglages, enregistrerLumiere, jouerImpact, jouerRate, jouerVictoire } from './reglages.js';
         import { creerSpectateurs } from './spectateurs.js';
 
         // =====================================================
@@ -699,6 +699,7 @@
             partie.etat = "nom";
             partie.chrono = false;
             partie.victoire = victoire;
+            if (victoire) jouerVictoire();
             if (victoire) spectateurs.celebrer(Infinity);   // ils sautent jusqu'à la prochaine partie
             else spectateurs.decevoir(Infinity);           // ils restent assis jusqu'à la prochaine partie
             partie.couleur = victoire ? "#2f7d46" : "#c8553d";

@@ -33,7 +33,11 @@ export function jouerClack() {
 }
 
 // ---------- Sons du jeu (fichiers dans audio/) ----------
-const FICHIERS_SONS = { impact: "audio/sonBaton.mp3", defaite: "audio/sonDefaite.mp3" };
+const FICHIERS_SONS = {
+    impact: "audio/sonBaton.mp3",
+    defaite: "audio/sonDefaite.mp3",
+    victoire: "audio/sonVictoire.mp3"
+};
 const sons = {};   // sons décodés, prêts à être joués
 
 async function chargerSons() {
@@ -49,7 +53,7 @@ async function chargerSons() {
 
 function jouerSon(nom) {
     const buffer = sons[nom];
-    if (!buffer) return;
+    if (!buffer) return null;
     const c = audioCtx();
     const source = c.createBufferSource();
     const gain = c.createGain();
@@ -57,6 +61,7 @@ function jouerSon(nom) {
     gain.gain.value = reglages.effets;
     source.connect(gain).connect(c.destination);
     source.start();
+    return source;
 }
 
 // Impact du bâton contre une quille
@@ -64,6 +69,32 @@ export function jouerImpact() { jouerSon("impact"); }
 
 // Dernier lancer raté avant la défaite
 export function jouerRate() { jouerSon("defaite"); }
+
+// Victoire : la musique de fond se coupe pendant le son, puis reprend à la fin
+export function jouerVictoire() {
+    const source = jouerSon("victoire");
+    if (!source) return;
+    couperMusique();
+    source.onended = reprendreMusique;
+}
+
+let musiqueCoupee = false;
+function couperMusique() {
+    if (sortieMusique) {
+        sortieMusique.gain.value = 0;
+        musiqueCoupee = true;
+    } else if (!musique.paused) {
+        musique.pause();
+        musiqueCoupee = true;
+    }
+}
+
+function reprendreMusique() {
+    if (!musiqueCoupee) return;
+    musiqueCoupee = false;
+    if (sortieMusique) appliquerVolumeMusique();
+    else musique.play().catch(() => {});
+}
 
 // ---------- Musique de fond ----------
 // Si audio/musique.mp3 existe, c'est lui qui est joué. Sinon, une petite musique est générée.
